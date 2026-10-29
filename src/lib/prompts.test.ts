@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { birthdayDetails, weddingDetails } from '../test/fixtures.js';
 import { buildBudget } from './budget.js';
-import { buildAskPrompt, buildIdeasPrompt, buildLogisticsPrompt, eventData } from './prompts.js';
+import {
+  buildAskPrompt,
+  buildExtractPrompt,
+  buildIdeasPrompt,
+  buildLogisticsPrompt,
+  eventData,
+  languageRule,
+} from './prompts.js';
 
 describe('prompts', () => {
   it('passes user input as JSON data, not as instructions', () => {
@@ -44,5 +51,20 @@ describe('prompts', () => {
     expect(prompt).toContain('Food & cake: ₹');
     expect(prompt).toContain('EARLIER_CONVERSATION: [{"question":"Q1","answer":"A1"}]');
     expect(prompt).toContain('QUESTION: "Rain plan?"');
+  });
+});
+
+describe('extraction and language prompts', () => {
+  it('passes the description as data and forbids guessing', () => {
+    const prompt = buildExtractPrompt('Shaadi in Pune, 8 lakh', '2026-10-30');
+    expect(prompt).toContain('DESCRIPTION: "Shaadi in Pune, 8 lakh"');
+    expect(prompt).toContain('Today is 2026-10-30');
+    expect(prompt).toContain('never guess a date');
+  });
+
+  it('adds an output-language rule only for Hindi and Hinglish', () => {
+    expect(languageRule(birthdayDetails)).toBe('');
+    expect(languageRule({ ...birthdayDetails, language: 'hi' })).toContain('Devanagari');
+    expect(buildIdeasPrompt({ ...birthdayDetails, language: 'hinglish' })).toContain('Hinglish');
   });
 });

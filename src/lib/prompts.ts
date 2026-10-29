@@ -120,6 +120,7 @@ export function buildAskPrompt(
 export function buildExtractPrompt(description: string, today: string): string {
   return [
     'Extract event-planning details from the description below. Fill only what it states or clearly implies.',
+    'Omit any field that is not mentioned — never guess a date, and never write placeholders such as "not specified".',
     `Today is ${today}. Convert relative or partial dates ("mid-Feb", "next Diwali") to a future YYYY-MM-DD.`,
     'Amounts are INR: "8 lakh" = 800000, "1.5 crore" = 15000000, "60k" = 60000.',
     'eventType must be wedding, birthday or community (festivals, society and charity events are community).',

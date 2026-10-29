@@ -31,6 +31,14 @@ describe('parseExtracted', () => {
     });
   });
 
+  it('drops placeholder text the model writes instead of omitting a field', () => {
+    expect(
+      parseExtracted({ city: 'Pune', colors: 'not specified', title: 'N/A', preferences: 'Unknown' }, TODAY),
+    ).toEqual({
+      city: 'Pune',
+    });
+  });
+
   it('returns null for empty or unusable output', () => {
     expect(parseExtracted('nope', TODAY)).toBeNull();
     expect(parseExtracted({ venueType: 'undecided', ageGroup: 'mixed' }, TODAY)).toBeNull();

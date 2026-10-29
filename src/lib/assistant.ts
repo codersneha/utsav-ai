@@ -41,6 +41,10 @@ export const EXTRACT_RESPONSE_SCHEMA = {
   },
 } as const;
 
+/** Text the model sometimes writes instead of leaving a field out. */
+const PLACEHOLDER = /^(not (specified|mentioned|provided|given)|unknown|none|n\/?a|-+)$/i;
+const real = (text: string) => (PLACEHOLDER.test(text.trim()) ? '' : text);
+
 /**
  * Validates extracted fields one by one. Anything doubtful is dropped, so the
  * user only ever sees values they can check in the form before planning.
@@ -51,19 +55,19 @@ export function parseExtracted(raw: unknown, today: string): Partial<EventDetail
   const out: Partial<EventDetails> = {};
 
   if (isEventType(obj.eventType)) out.eventType = obj.eventType;
-  const title = cleanText(obj.title, LIMITS.titleMax);
+  const title = real(cleanText(obj.title, LIMITS.titleMax));
   if (title) out.title = title;
   if (typeof obj.date === 'string' && !Number.isNaN(parseIsoDate(obj.date))) {
     const ahead = daysBetween(today, obj.date);
     if (ahead >= 0 && ahead <= LIMITS.maxDaysAhead) out.date = obj.date;
   }
-  const city = cleanText(obj.city, LIMITS.cityMax);
+  const city = real(cleanText(obj.city, LIMITS.cityMax));
   if (city.length >= 2) out.city = city;
   const guests = toInt(obj.guests);
   if (guests >= LIMITS.guestsMin && guests <= LIMITS.guestsMax) out.guests = guests;
   const budget = toInt(obj.budget);
   if (budget >= LIMITS.budgetMin && budget <= LIMITS.budgetMax) out.budget = budget;
-  const preferences = cleanText(obj.preferences, LIMITS.preferencesMax);
+  const preferences = real(cleanText(obj.preferences, LIMITS.preferencesMax));
   if (preferences) out.preferences = preferences;
   const priorities = pickAllowed(obj.priorities, isPriority, 2);
   if (priorities.length > 0) out.priorities = priorities;
@@ -71,7 +75,7 @@ export function parseExtracted(raw: unknown, today: string): Partial<EventDetail
   const diets = pickAllowed(obj.diets, isDiet, DIETS.length);
   if (diets.length > 0) out.diets = diets;
   if (isAgeGroup(obj.ageGroup) && obj.ageGroup !== 'mixed') out.ageGroup = obj.ageGroup;
-  const colors = cleanText(obj.colors, LIMITS.colorsMax);
+  const colors = real(cleanText(obj.colors, LIMITS.colorsMax));
   if (colors) out.colors = colors;
 
   return Object.keys(out).length > 0 ? out : null;
