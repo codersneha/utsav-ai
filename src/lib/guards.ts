@@ -35,8 +35,19 @@ export const isVendorEntry = (v: unknown): v is VendorEntry =>
   Number.isFinite(v.quote) &&
   VENDOR_STATUSES.includes(v.status as VendorEntry['status']);
 
+const isProposal = (v: unknown) =>
+  isObject(v) &&
+  isString(v.summary) &&
+  (v.guests === undefined || typeof v.guests === 'number') &&
+  (v.budget === undefined || typeof v.budget === 'number') &&
+  (v.date === undefined || isString(v.date));
+
 export const isChatTurn = (v: unknown): v is ChatTurn =>
-  isObject(v) && isString(v.question) && isString(v.answer);
+  isObject(v) &&
+  isString(v.question) &&
+  isString(v.answer) &&
+  (v.proposal === undefined || isProposal(v.proposal)) &&
+  (v.proposalState === undefined || v.proposalState === 'applied' || v.proposalState === 'dismissed');
 
 export const isLogistics = (v: unknown): v is Logistics =>
   isObject(v) &&

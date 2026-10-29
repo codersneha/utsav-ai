@@ -15,6 +15,7 @@ export const weddingDetails: EventDetails = {
   diets: ['vegetarian', 'jain'],
   ageGroup: 'mixed',
   colors: 'pastel pink and mint',
+  language: 'en',
 };
 
 export const birthdayDetails: EventDetails = {
@@ -30,6 +31,7 @@ export const birthdayDetails: EventDetails = {
   diets: [],
   ageGroup: 'kids',
   colors: '',
+  language: 'en',
 };
 
 export const geminiIdeas = {
@@ -81,16 +83,23 @@ export const apiLogistics = {
 export function apiResponder(answer = 'Book the venue first.') {
   return async (_url: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
-    const payload =
-      body.mode === 'ask'
-        ? { answer }
-        : body.mode === 'logistics'
-          ? { logistics: apiLogistics }
-          : {
-              ideas: body.refinement
-                ? { ...geminiIdeas, summary: `Refined: ${body.refinement}` }
-                : geminiIdeas,
-            };
+    let payload: unknown;
+    if (body.mode === 'extract') {
+      payload = { extracted: { eventType: 'wedding', city: 'Lucknow', guests: 250, budget: 1_800_000 } };
+    } else if (body.mode === 'logistics') {
+      payload = { logistics: apiLogistics };
+    } else if (body.mode === 'ask') {
+      payload = /more guests/i.test(body.question)
+        ? {
+            answer: 'Here is what changes.',
+            proposal: { guests: body.details.guests + 50, summary: '50 more guests' },
+          }
+        : { answer };
+    } else {
+      payload = {
+        ideas: body.refinement ? { ...geminiIdeas, summary: `Refined: ${body.refinement}` } : geminiIdeas,
+      };
+    }
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

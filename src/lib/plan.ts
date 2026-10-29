@@ -35,3 +35,12 @@ const currency = new Intl.NumberFormat('en-IN', {
 export function formatInr(amount: number): string {
   return currency.format(amount);
 }
+
+/** Short Indian notation for tight spaces: ₹2.5Cr, ₹25L, ₹60k. */
+export function formatCompactInr(amount: number): string {
+  const trim = (n: number) => String(Math.round(n * 10) / 10);
+  if (amount >= 10_000_000) return `₹${trim(amount / 10_000_000)}Cr`;
+  if (amount >= 100_000) return `₹${trim(amount / 100_000)}L`;
+  if (amount >= 1000) return `₹${trim(amount / 1000)}k`;
+  return `₹${amount}`;
+}

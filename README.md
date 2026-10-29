@@ -3,9 +3,9 @@
 > **PromptWars Virtual · Challenge 5 — Celebration & Event Planner**
 > _"Create a GenAI-powered planning assistant that helps users organize weddings, birthdays, and community events with budgets, timelines, vendor checklists, and personalized ideas."_
 
-UtsavAI (_utsav_ means "celebration" in Hindi) asks a few practical questions — occasion, date, city, guests, budget, venue, dietary needs, age group, style — and builds a complete, **editable** plan: a budget, a task timeline with a day-of schedule, vendor checklists with questions to ask, and ideas personalised by **Google Gemini**. When plans change ("50 more guests, a smaller budget, two weeks earlier"), it **revises the plan in place** and explains what changed — no starting over.
+UtsavAI (_utsav_ means "celebration" in Hindi) is a warm, festive planning companion for Indian families. **Describe your event in your own words — English, Hindi or Hinglish** — and it builds a complete, **editable** plan: a budget that adds up to the rupee, a task timeline with a day-of schedule, vendor checklists with questions to ask, and ideas personalised by **Google Gemini**. Tell the assistant _"we now have 50 more guests"_ and it proposes the change, shows exactly what it affects, and applies it only when you say so — with **Undo**.
 
-**Live demo:** https://utsav-ai-one.vercel.app · **Demo video:** `<your-video-link>`
+**Live demo:** https://utsav-ai-one.vercel.app (try a one-click sample) · **Demo video:** `<your-video-link>`
 
 ---
 
@@ -67,6 +67,10 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 - `api/generate.ts`: a 5-line Vercel Function entry. The **API key stays on the server**.
 - `src/components/`: accessible React UI. The plan view is lazy-loaded.
 
+## Design
+
+A calm, festive identity instead of a form-and-table utility: ivory paper, rani pink, marigold and peacock-teal; **Fraunces** display type with **Plus Jakarta Sans** for text; a toran (door-garland) border; event headers coloured by occasion; and an Overview dashboard with a budget donut and progress rings. Every screen works at phone width, in light and dark mode, with reduced-motion support.
+
 ## Evaluation focus areas
 
 ### 🔐 Security
@@ -82,7 +86,7 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 
 ### ⚡ Efficiency
 
-- No AI SDK: a tiny `fetch`-based Gemini client keeps the function small. The app shell is about 84 KB gzipped and the plan view (7 KB) is **code-split** with `React.lazy`.
+- No AI SDK: a tiny `fetch`-based Gemini client keeps the function small. The app shell is about 92 KB gzipped and the plan view (11 KB) is **code-split** with `React.lazy`. Charts are hand-built SVG (no chart library); fonts are self-hosted variable fonts loaded only for Latin text.
 - **Server LRU cache** (30 minutes) avoids paying twice for identical requests. Ideas are also cached in `localStorage`.
 - **Ideas and logistics load in parallel**; the server caches both. Refinements only regenerate ideas.
 - **Timeouts and retries**: the 20 s server budget is split across two attempts; an overloaded or stalled call is retried once on a second Gemini model. The client times out at 25 s and aborts stale requests.
@@ -90,15 +94,17 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 
 ### ✅ Testing
 
-- **134 tests across 21 files** (Vitest + Testing Library), with about **99% line and 91% branch coverage** (`npm run coverage`).
+- **157 tests across 23 files** (Vitest + Testing Library), with about **98% line and 90% branch coverage** (`npm run coverage`).
 - Unit tests: budget maths (exact sums, priority boosts, user overrides, guest impact, trade-offs that really fix the plan), timeline (compression, priorities, dependencies, slippage alerts, custom tasks), checklist & quote summaries, the change report (including the explainer's "50 more guests, smaller budget, two weeks earlier" case), validation, prompts, AI-output parsing, storage guards, calendar export, rate limiter and cache.
 - API tests: every guard (405/413/415/400/429/503/502), all three modes, refinement, conversation-history capping, caching, retries and model fallback — with a mocked Gemini.
 - **Contract tests** feed the real server handler's response into the real browser client, so the two can't drift apart.
-- Integration tests drive each user flow: create → ideas → budget edits & trade-offs → timeline tasks → vendor records → refine → multi-turn chat → change details → export, plus fallback, corrupt storage and upgrading old saved plans.
+- Integration tests drive each user flow: describe-your-event → wizard → overview → ideas → budget edits & trade-offs → timeline tasks → vendor records → refine → chat proposal → apply → undo → share link → export, plus one-click samples, fallbacks, corrupt storage and upgrading old saved plans.
 - **Automated accessibility tests** run axe-core at every major UI state.
 - CI (GitHub Actions) runs lint, typecheck, coverage and build on every push.
 
 ### ♿ Accessibility (WCAG 2.2 AA-minded)
+
+- **0 axe-core violations — including colour contrast — on every screen (landing, wizard, all six plan tabs) in both light and dark themes, checked in a real Chromium browser**, plus axe checks inside the automated tests.
 
 - Semantic landmarks, a skip link, and a logical heading order. Focus moves to the plan heading after submit, and to the change report after an edit.
 - An error summary with links to the invalid fields, plus `aria-invalid`, `aria-describedby` and inline messages.
@@ -146,7 +152,7 @@ Optionally set `GEMINI_MODEL` to use a different Gemini model. It can be a comma
 
 ## Tech stack
 
-React 19 · TypeScript · Vite · Vitest · Testing Library · axe-core · Google Gemini API · Vercel Functions · Google Maps & Google Calendar links
+React 19 · TypeScript · Vite · Vitest · Testing Library · axe-core · lucide icons · Fontsource · Google Gemini API · Vercel Functions · Google Maps & Google Calendar links · WhatsApp click-to-chat
 
 ---
 

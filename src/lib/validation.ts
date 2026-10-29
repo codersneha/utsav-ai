@@ -2,12 +2,14 @@ import {
   AGE_GROUPS,
   DIETS,
   EVENT_TYPES,
+  LANGUAGES,
   PRIORITIES,
   VENUE_TYPES,
   type AgeGroup,
   type Diet,
   type EventDetails,
   type EventType,
+  type Language,
   type Priority,
   type VenueType,
 } from '../types.js';
@@ -20,6 +22,8 @@ export const LIMITS = {
   colorsMax: 60,
   questionMax: 300,
   refinementMax: 200,
+  describeMin: 10,
+  describeMax: 600,
   guestsMin: 1,
   guestsMax: 5000,
   budgetMin: 1000,
@@ -44,19 +48,20 @@ export function cleanText(value: unknown, max: number): string {
     .slice(0, max);
 }
 
-function toInt(value: unknown): number {
+export function toInt(value: unknown): number {
   const n = typeof value === 'string' ? Number(value.replace(/[,\s₹]/g, '')) : Number(value);
   return Number.isFinite(n) ? Math.round(n) : Number.NaN;
 }
 
-const isEventType = (v: unknown): v is EventType => EVENT_TYPES.includes(v as EventType);
-const isPriority = (v: unknown): v is Priority => PRIORITIES.includes(v as Priority);
-const isDiet = (v: unknown): v is Diet => DIETS.includes(v as Diet);
-const isVenueType = (v: unknown): v is VenueType => VENUE_TYPES.includes(v as VenueType);
-const isAgeGroup = (v: unknown): v is AgeGroup => AGE_GROUPS.includes(v as AgeGroup);
+export const isEventType = (v: unknown): v is EventType => EVENT_TYPES.includes(v as EventType);
+export const isPriority = (v: unknown): v is Priority => PRIORITIES.includes(v as Priority);
+export const isDiet = (v: unknown): v is Diet => DIETS.includes(v as Diet);
+export const isVenueType = (v: unknown): v is VenueType => VENUE_TYPES.includes(v as VenueType);
+export const isAgeGroup = (v: unknown): v is AgeGroup => AGE_GROUPS.includes(v as AgeGroup);
+export const isLanguage = (v: unknown): v is Language => LANGUAGES.includes(v as Language);
 
 /** Keeps only allowed values from an untrusted array, without duplicates. */
-function pickAllowed<T>(value: unknown, isAllowed: (v: unknown) => v is T, max: number): T[] {
+export function pickAllowed<T>(value: unknown, isAllowed: (v: unknown) => v is T, max: number): T[] {
   return Array.isArray(value) ? [...new Set(value.filter(isAllowed))].slice(0, max) : [];
 }
 
@@ -113,6 +118,7 @@ export function validateEventDetails(input: unknown, today: string): ValidationR
       diets: pickAllowed(raw.diets, isDiet, DIETS.length),
       ageGroup: isAgeGroup(raw.ageGroup) ? raw.ageGroup : 'mixed',
       colors: cleanText(raw.colors, LIMITS.colorsMax),
+      language: isLanguage(raw.language) ? raw.language : 'en',
     },
   };
 }

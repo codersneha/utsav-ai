@@ -109,7 +109,9 @@ describe('handleGenerate — Gemini calls', () => {
   });
 
   it('answers questions in ask mode with sanitised text', async () => {
-    const fetchImpl = vi.fn(async () => geminiResponse('Book <b>early</b>.')) as unknown as typeof fetch;
+    const fetchImpl = vi.fn(async () =>
+      geminiResponse(JSON.stringify({ answer: 'Book <b>early</b>.' })),
+    ) as unknown as typeof fetch;
     const res = await handleGenerate(
       post({ mode: 'ask', details: weddingDetails, question: 'When to book?' }),
       deps({ fetchImpl }),
@@ -185,7 +187,9 @@ describe('handleGenerate — logistics, refinement and conversation', () => {
   });
 
   it('includes cleaned, capped conversation history in ask prompts', async () => {
-    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => geminiResponse('Sure.'));
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      geminiResponse(JSON.stringify({ answer: 'Sure.' })),
+    );
     const history = [
       ...Array.from({ length: 6 }, (_, i) => ({ question: `Q${i}`, answer: `A${i}` })),
       { question: '', answer: 'orphan' },
@@ -200,5 +204,94 @@ describe('handleGenerate — logistics, refinement and conversation', () => {
     expect(prompt).not.toContain('"question":"Q4"');
     expect(prompt).not.toContain('orphan');
     expect(prompt).toContain('BUDGET_ESTIMATES');
+  });
+});
+
+describe('handleGenerate — extraction and change proposals', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('extracts validated form fields from a free-text description without needing details', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      geminiResponse(
+        JSON.stringify({
+          eventType: 'wedding',
+          city: 'Pune',
+          guests: 200,
+          budget: 800000,
+          date: '2027-02-15',
+          diets: ['jain', 'keto'],
+        }),
+      ),
+    );
+    const res = await handleGenerate(
+      post({ mode: 'extract', description: 'Shaadi in Pune, 200 guests, 8 lakh, mid-Feb, Jain food' }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).extracted).toEqual({
+      eventType: 'wedding',
+      city: 'Pune',
+      guests: 200,
+      budget: 800000,
+      date: '2027-02-15',
+      diets: ['jain'],
+    });
+    const prompt = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).contents[0].parts[0].text;
+    expect(prompt).toContain('DESCRIPTION: "Shaadi in Pune');
+  });
+
+  it('rejects too-short descriptions and unusable extractions', async () => {
+    expect((await handleGenerate(post({ mode: 'extract', description: 'party' }), deps())).status).toBe(400);
+    const fetchImpl = (async () => geminiResponse('{}')) as typeof fetch;
+    const res = await handleGenerate(
+      post({ mode: 'extract', description: 'something unrelated entirely' }),
+      deps({ fetchImpl }),
+    );
+    expect(res.status).toBe(502);
+  });
+
+  it('returns a validated change proposal with the answer', async () => {
+    const fetchImpl = (async () =>
+      geminiResponse(
+        JSON.stringify({
+          answer: 'Here is the update.',
+          proposal: { guests: 350, budget: 2_200_000, summary: '50 more guests' },
+        }),
+      )) as typeof fetch;
+    const res = await handleGenerate(
+      post({ mode: 'ask', details: weddingDetails, question: 'We now have 50 more guests and less money' }),
+      deps({ fetchImpl }),
+    );
+    expect(await res.json()).toEqual({
+      answer: 'Here is the update.',
+      proposal: { guests: 350, budget: 2_200_000, summary: '50 more guests' },
+    });
+  });
+
+  it('drops invalid or no-op proposals', async () => {
+    for (const proposal of [
+      { guests: 999999, summary: 'too many' },
+      { guests: 300, summary: 'same' },
+      'nonsense',
+    ]) {
+      const fetchImpl = (async () =>
+        geminiResponse(JSON.stringify({ answer: 'OK', proposal }))) as typeof fetch;
+      const res = await handleGenerate(
+        post({ mode: 'ask', details: weddingDetails, question: 'Change?' }),
+        deps({ fetchImpl }),
+      );
+      expect(await res.json()).toEqual({ answer: 'OK' });
+    }
+  });
+
+  it('returns 502 when the answer is missing', async () => {
+    const fetchImpl = (async () => geminiResponse(JSON.stringify({ proposal: {} }))) as typeof fetch;
+    const res = await handleGenerate(
+      post({ mode: 'ask', details: weddingDetails, question: 'Hi there' }),
+      deps({ fetchImpl }),
+    );
+    expect(res.status).toBe(502);
   });
 });

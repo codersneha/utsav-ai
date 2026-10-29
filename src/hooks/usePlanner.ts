@@ -6,6 +6,7 @@ import { todayIso } from '../lib/dates';
 import { isArrayOf, isChatTurn, isCustomTask, isLogistics, isVendorEntry } from '../lib/guards';
 import { parseIdeas } from '../lib/ideas';
 import { buildPlan } from '../lib/plan';
+import { readSharedPlan } from '../lib/share';
 import { isBoolean, isNumber, isRecordOf } from '../lib/storage';
 import { validateEventDetails } from '../lib/validation';
 import type { ChatTurn, CustomTask, EventDetails, Ideas, Logistics, VendorEntry } from '../types';
@@ -23,6 +24,16 @@ const normalizeDetails = (v: EventDetails | null) => (v === null ? null : stored
 const isStoredIdeas = (v: unknown): v is Ideas | null =>
   v === null || (parseIdeas(v) !== null && ['gemini', 'fallback'].includes((v as Ideas).source));
 const isStoredLogistics = (v: unknown): v is Logistics | null => v === null || isLogistics(v);
+
+/** Everything the user can change, captured before an edit so it can be undone. */
+interface Snapshot {
+  details: EventDetails;
+  overrides: Record<string, number>;
+  done: Record<string, boolean>;
+  spent: Record<string, number>;
+  vendors: VendorEntry[];
+  timelineDone: Record<string, boolean>;
+}
 
 let nextId = 0;
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(nextId++).toString(36)}`;
@@ -101,6 +112,10 @@ export function usePlanner() {
   const [chat, setChat] = usePersistentState<ChatTurn[]>('chat', [], isArrayOf(isChatTurn));
   const [asking, setAsking] = useState(false);
   const [change, setChange] = useState<PlanChange | null>(null);
+  const [history, setHistory] = useState<Snapshot[]>([]);
+  const [shared, setShared] = useState<EventDetails | null>(() =>
+    typeof window === 'undefined' ? null : readSharedPlan(window.location.hash),
+  );
 
   const ideas = useAiResource<Ideas>('ideas', isStoredIdeas);
   const logistics = useAiResource<Logistics>('logistics', isStoredLogistics);
@@ -134,29 +149,70 @@ export function usePlanner() {
     logistics.start((signal) => fetchLogistics(d, signal));
   };
 
+  const snapshot = (): Snapshot | null =>
+    details ? { details, overrides, done, spent, vendors, timelineDone } : null;
+
+  /** Shows what changed between two versions of the plan and refreshes AI content if needed. */
+  const revise = (next: EventDetails, nextOverrides: Record<string, number>, prefix?: string) => {
+    if (!plan) return;
+    const nextPlan = buildPlan(next, today, {
+      overrides: nextOverrides,
+      customTasks,
+      vendorAdvice: logistics.value?.vendors,
+    });
+    const summary = describeChanges(plan, nextPlan, today);
+    setChange(prefix ? { ...summary, lines: [prefix, ...summary.lines] } : summary);
+    setDetails(next);
+    if (summary.refreshAi) loadAi(next);
+    return summary;
+  };
+
   const submit = (next: EventDetails) => {
-    if (plan) {
-      const nextPlan = buildPlan(next, today, {
-        overrides,
-        customTasks,
-        vendorAdvice: logistics.value?.vendors,
-      });
-      const summary = describeChanges(plan, nextPlan, today);
-      setChange(summary);
-      if (summary.reset) {
+    const before = snapshot();
+    if (before && plan) {
+      setHistory((h) => [...h, before].slice(-10));
+      const summary = revise(next, overrides);
+      if (summary?.reset) {
         setDone({});
         setSpent({});
         setOverrides({});
         setVendors([]);
         setTimelineDone({});
       }
-      setDetails(next);
-      if (summary.refreshAi) loadAi(next);
       return;
     }
     setChange(null);
+    setHistory([]);
     setDetails(next);
     loadAi(next);
+  };
+
+  /** Restores the plan as it was before the last change (details, edits and progress). */
+  const undo = () => {
+    const last = history.at(-1);
+    if (!last) return;
+    setHistory((h) => h.slice(0, -1));
+    setOverrides(last.overrides);
+    setDone(last.done);
+    setSpent(last.spent);
+    setVendors(last.vendors);
+    setTimelineDone(last.timelineDone);
+    revise(last.details, last.overrides, 'Undone — the plan is back to how it was.');
+  };
+
+  /** Opens a plan someone shared by link, replacing the current one. */
+  const openShared = () => {
+    if (!shared) return;
+    reset();
+    setDetails(shared);
+    loadAi(shared);
+    setShared(null);
+    window.history.replaceState(null, '', window.location.pathname);
+  };
+
+  const dismissShared = () => {
+    setShared(null);
+    window.history.replaceState(null, '', window.location.pathname);
   };
 
   const applyTradeOff = (action: TradeOffAction) => {
@@ -178,10 +234,31 @@ export function usePlanner() {
   const ask = async (question: string) => {
     if (!details) return;
     setAsking(true);
-    const answer = await askPlanner(details, question, chat);
-    setChat((c) => [...c, { question, answer }].slice(-20));
+    const { answer, proposal } = await askPlanner(details, question, chat);
+    setChat((c) => [...c, proposal ? { question, answer, proposal } : { question, answer }].slice(-20));
     setAsking(false);
   };
+
+  /** Applies a change the assistant proposed — only after the user clicks Apply. */
+  const applyProposal = (index: number) => {
+    const turn = chat[index];
+    if (!details || !turn?.proposal || turn.proposalState) return;
+    const { guests, budget, date } = turn.proposal;
+    const candidate = {
+      ...details,
+      ...(guests ? { guests } : {}),
+      ...(budget ? { budget } : {}),
+      ...(date ? { date } : {}),
+    };
+    // Re-validate: stored proposals could be stale or edited.
+    const result = validateEventDetails(candidate, today);
+    if (!result.ok) return;
+    submit(result.value);
+    setChat((c) => c.map((t, i) => (i === index ? { ...t, proposalState: 'applied' } : t)));
+  };
+
+  const dismissProposal = (index: number) =>
+    setChat((c) => c.map((t, i) => (i === index ? { ...t, proposalState: 'dismissed' } : t)));
 
   const reset = () => {
     ideas.clear();
@@ -195,6 +272,7 @@ export function usePlanner() {
     setVendors([]);
     setChat([]);
     setChange(null);
+    setHistory([]);
   };
 
   const toggle = (setter: typeof setDone) => (id: string) => setter((d) => ({ ...d, [id]: !d[id] }));
@@ -207,6 +285,9 @@ export function usePlanner() {
     dismissChange: () => setChange(null),
     submit,
     reset,
+    canUndo: history.length > 0,
+    undo,
+    shared: { details: shared, open: openShared, dismiss: dismissShared },
     ideas: { ...ideas, regenerate: regenerateIdeas, refine: refineIdeas },
     logistics,
     budget: {
@@ -237,7 +318,7 @@ export function usePlanner() {
         setVendors((v) => v.map((e) => (e.id === id ? { ...e, ...patch } : e))),
       remove: (id: string) => setVendors((v) => v.filter((e) => e.id !== id)),
     },
-    chat: { turns: chat, asking, ask, clear: () => setChat([]) },
+    chat: { turns: chat, asking, ask, clear: () => setChat([]), applyProposal, dismissProposal },
   };
 }
 

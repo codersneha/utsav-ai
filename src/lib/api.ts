@@ -1,4 +1,4 @@
-import type { ChatTurn, EventDetails, Ideas, Logistics } from '../types.js';
+import type { ChangeProposal, ChatTurn, EventDetails, Ideas, Logistics } from '../types.js';
 import { fallbackIdeas, parseIdeas } from './ideas.js';
 import { isLogistics } from './guards.js';
 import { fallbackLogistics } from './logistics.js';
@@ -88,22 +88,72 @@ export function fetchLogistics(details: EventDetails, signal?: AbortSignal): Pro
   );
 }
 
-/** Asks a follow-up question with recent conversation as context. */
+export interface AskResult {
+  answer: string;
+  proposal?: ChangeProposal;
+}
+
+/** Asks a follow-up question with recent conversation as context; may include a change proposal. */
 export async function askPlanner(
   details: EventDetails,
   question: string,
   history: ChatTurn[] = [],
-): Promise<string> {
+): Promise<AskResult> {
   try {
-    const res = await postJson({ mode: 'ask', details, question, history: history.slice(-4) });
+    const turns = history.slice(-4).map(({ question: q, answer }) => ({ question: q, answer }));
+    const res = await postJson({ mode: 'ask', details, question, history: turns });
     if (!res.ok) {
-      return res.status === 429
-        ? 'Too many questions at once — please wait a minute.'
-        : 'Sorry, I could not answer right now. Please try again shortly.';
+      return {
+        answer:
+          res.status === 429
+            ? 'Too many questions at once — please wait a minute.'
+            : 'Sorry, I could not answer right now. Please try again shortly.',
+      };
     }
-    const data = (await res.json()) as { answer?: unknown };
-    return typeof data.answer === 'string' && data.answer ? data.answer : 'Sorry, I could not answer that.';
+    const data = (await res.json()) as { answer?: unknown; proposal?: unknown };
+    if (typeof data.answer !== 'string' || !data.answer) return { answer: 'Sorry, I could not answer that.' };
+    // The server validated the proposal; re-check its shape before showing an Apply button.
+    const p = data.proposal as Partial<ChangeProposal> | undefined;
+    const valid =
+      p &&
+      typeof p.summary === 'string' &&
+      (typeof p.guests === 'number' || typeof p.budget === 'number' || typeof p.date === 'string');
+    return valid ? { answer: data.answer, proposal: p as ChangeProposal } : { answer: data.answer };
   } catch {
-    return 'You appear to be offline. Please check your connection and try again.';
+    return { answer: 'You appear to be offline. Please check your connection and try again.' };
+  }
+}
+
+export interface ExtractResult {
+  fields: Partial<EventDetails>;
+  /** Set when nothing could be extracted, explaining what to do instead. */
+  notice?: string;
+}
+
+/** Turns a free-text description into form fields for the user to review. */
+export async function extractDetails(description: string): Promise<ExtractResult> {
+  try {
+    const res = await postJson({ mode: 'extract', description });
+    if (!res.ok) {
+      return {
+        fields: {},
+        notice:
+          res.status === 503
+            ? 'AI is not configured here — please fill in the form below.'
+            : 'Could not read that just now — please fill in the form below or try again.',
+      };
+    }
+    const data = (await res.json()) as { extracted?: unknown };
+    const fields =
+      data.extracted && typeof data.extracted === 'object' ? (data.extracted as Partial<EventDetails>) : {};
+    return Object.keys(fields).length > 0
+      ? { fields }
+      : {
+          fields,
+          notice:
+            'I could not find event details in that — try mentioning the occasion, date, guests and budget.',
+        };
+  } catch {
+    return { fields: {}, notice: 'You appear to be offline — please fill in the form below.' };
   }
 }

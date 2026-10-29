@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { apiLogistics, birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures.js';
-import { askPlanner, fetchIdeas, fetchLogistics } from './api.js';
+import { askPlanner, extractDetails, fetchIdeas, fetchLogistics } from './api.js';
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -44,18 +44,18 @@ describe('fetchIdeas', () => {
 describe('askPlanner', () => {
   it('returns the answer text', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ answer: 'Book early.' }));
-    expect(await askPlanner(weddingDetails, 'When?')).toBe('Book early.');
+    expect((await askPlanner(weddingDetails, 'When?')).answer).toBe('Book early.');
   });
 
   it('returns friendly messages on failures', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({}, 429));
-    expect(await askPlanner(weddingDetails, 'When?')).toMatch(/wait/);
+    expect((await askPlanner(weddingDetails, 'When?')).answer).toMatch(/wait/);
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({}, 500));
-    expect(await askPlanner(weddingDetails, 'When?')).toMatch(/try again/);
+    expect((await askPlanner(weddingDetails, 'When?')).answer).toMatch(/try again/);
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ answer: 5 }));
-    expect(await askPlanner(weddingDetails, 'When?')).toMatch(/could not/);
+    expect((await askPlanner(weddingDetails, 'When?')).answer).toMatch(/could not/);
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('offline'));
-    expect(await askPlanner(weddingDetails, 'When?')).toMatch(/offline/);
+    expect((await askPlanner(weddingDetails, 'When?')).answer).toMatch(/offline/);
   });
 });
 
@@ -130,5 +130,34 @@ describe('response contract', () => {
     const result = await fetchIdeas(birthdayDetails);
     expect(result.notice).toBeUndefined();
     expect(result.value.source).toBe('gemini');
+  });
+});
+
+describe('assistant proposals and extraction', () => {
+  it('returns a proposal only when it is well-formed', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      jsonResponse({ answer: 'Done', proposal: { guests: 350, summary: 'More guests' } }),
+    );
+    expect(await askPlanner(weddingDetails, 'More guests?')).toEqual({
+      answer: 'Done',
+      proposal: { guests: 350, summary: 'More guests' },
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      jsonResponse({ answer: 'Done', proposal: { summary: 'x' } }),
+    );
+    expect(await askPlanner(weddingDetails, 'More guests?')).toEqual({ answer: 'Done' });
+  });
+
+  it('extracts fields or explains what to do instead', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ extracted: { city: 'Pune' } }));
+    expect(await extractDetails('Party in Pune for my son')).toEqual({ fields: { city: 'Pune' } });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ extracted: {} }));
+    expect((await extractDetails('hello there friend')).notice).toMatch(/could not find/);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({}, 503));
+    expect((await extractDetails('hello there friend')).notice).toMatch(/not configured/);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({}, 500));
+    expect((await extractDetails('hello there friend')).notice).toMatch(/Could not read/);
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('offline'));
+    expect((await extractDetails('hello there friend')).notice).toMatch(/offline/);
   });
 });

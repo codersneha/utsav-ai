@@ -3,6 +3,8 @@ import { useRef, type KeyboardEvent, type ReactNode } from 'react';
 export interface TabDef {
   id: string;
   label: string;
+  /** Decorative icon shown before the label. */
+  icon?: ReactNode;
   content: ReactNode;
 }
 
@@ -54,6 +56,7 @@ export function Tabs({ tabs, active, onChange, label }: Props) {
             onClick={() => onChange(tab.id)}
             onKeyDown={onKeyDown}
           >
+            {tab.icon}
             {tab.label}
           </button>
         ))}

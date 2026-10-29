@@ -12,6 +12,9 @@ export type VenueType = (typeof VENUE_TYPES)[number];
 export const DIETS = ['vegetarian', 'non-vegetarian', 'jain', 'vegan', 'gluten-free'] as const;
 export type Diet = (typeof DIETS)[number];
 
+export const LANGUAGES = ['en', 'hi', 'hinglish'] as const;
+export type Language = (typeof LANGUAGES)[number];
+
 export const AGE_GROUPS = ['mixed', 'kids', 'teens', 'adults', 'seniors'] as const;
 export type AgeGroup = (typeof AGE_GROUPS)[number];
 
@@ -33,6 +36,8 @@ export interface EventDetails {
   ageGroup: AgeGroup;
   /** Preferred colour palette, free text. */
   colors: string;
+  /** Language for AI-written text (ideas, schedule, answers). */
+  language: Language;
 }
 
 export interface BudgetLine {
@@ -165,8 +170,20 @@ export interface EventPlan {
   checklist: VendorGroup[];
 }
 
+/** A change to the plan suggested by the assistant; applied only if the user agrees. */
+export interface ChangeProposal {
+  guests?: number;
+  budget?: number;
+  date?: string;
+  /** One-line description of the change, in the user's words. */
+  summary: string;
+}
+
 /** One turn of the Ask AI conversation. */
 export interface ChatTurn {
   question: string;
   answer: string;
+  proposal?: ChangeProposal;
+  /** What the user did with the proposal. */
+  proposalState?: 'applied' | 'dismissed';
 }

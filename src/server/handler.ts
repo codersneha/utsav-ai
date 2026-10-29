@@ -1,4 +1,10 @@
-import { cleanList, cleanObjects } from '../lib/aiOutput.js';
+import { cleanList, cleanObjects, toObject } from '../lib/aiOutput.js';
+import {
+  ASK_RESPONSE_SCHEMA,
+  EXTRACT_RESPONSE_SCHEMA,
+  parseExtracted,
+  parseProposal,
+} from '../lib/assistant.js';
 import { buildBudget } from '../lib/budget.js';
 import { addDays, todayIso } from '../lib/dates.js';
 import { IDEAS_RESPONSE_SCHEMA, parseIdeas } from '../lib/ideas.js';
@@ -6,6 +12,7 @@ import { LOGISTICS_RESPONSE_SCHEMA, parseLogistics } from '../lib/logistics.js';
 import {
   SYSTEM_INSTRUCTION,
   buildAskPrompt,
+  buildExtractPrompt,
   buildIdeasPrompt,
   buildLogisticsPrompt,
   type Refinement,
@@ -54,9 +61,10 @@ function clientId(request: Request): string {
 
 /** Validated, mode-specific request — everything the model sees has been cleaned. */
 type Job =
+  | { mode: 'extract'; description: string; today: string }
   | { mode: 'ideas'; details: EventDetails; refinement?: Refinement }
   | { mode: 'logistics'; details: EventDetails }
-  | { mode: 'ask'; details: EventDetails; question: string; history: ChatTurn[] };
+  | { mode: 'ask'; details: EventDetails; question: string; history: ChatTurn[]; today: string };
 
 const pickTurn = (o: Record<string, unknown>): ChatTurn | null => {
   const turn = { question: cleanText(o.question, LIMITS.questionMax), answer: cleanText(o.answer, 600) };
@@ -64,12 +72,21 @@ const pickTurn = (o: Record<string, unknown>): ChatTurn | null => {
 };
 
 /** Turns the untrusted payload into a Job, or an error message for a 400. */
-function parseJob(payload: Record<string, unknown>, details: EventDetails): Job | string {
+function parseJob(payload: Record<string, unknown>, today: string): Job | { error: string; fields?: object } {
+  if (payload.mode === 'extract') {
+    const description = cleanText(payload.description, LIMITS.describeMax);
+    if (description.length < LIMITS.describeMin) return { error: 'Description is too short' };
+    return { mode: 'extract', description, today };
+  }
+  const result = validateEventDetails(payload.details, today);
+  if (!result.ok) return { error: 'Invalid event details', fields: result.errors };
+  const details = result.value;
+
   switch (payload.mode) {
     case 'ideas': {
       const request = cleanText(payload.refinement, LIMITS.refinementMax);
       if (!request) return { mode: 'ideas', details };
-      if (request.length < 3) return 'Refinement is too short';
+      if (request.length < 3) return { error: 'Refinement is too short' };
       return {
         mode: 'ideas',
         details,
@@ -80,16 +97,17 @@ function parseJob(payload: Record<string, unknown>, details: EventDetails): Job 
       return { mode: 'logistics', details };
     case 'ask': {
       const question = cleanText(payload.question, LIMITS.questionMax);
-      if (question.length < 3) return 'Question is too short';
+      if (question.length < 3) return { error: 'Question is too short' };
       return {
         mode: 'ask',
         details,
         question,
         history: cleanObjects(payload.history, MAX_HISTORY, pickTurn),
+        today,
       };
     }
     default:
-      return 'Unknown mode';
+      return { error: 'Unknown mode' };
   }
 }
 
@@ -114,12 +132,25 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
     case 'ask': {
       const { details } = job;
       const budget = buildBudget(details.eventType, details.budget, details.guests, details.priorities);
-      const prompt = buildAskPrompt(details, budget, job.history, job.question);
+      const prompt = buildAskPrompt(details, budget, job.history, job.question, job.today);
       const text = await generateText(
-        { ...base, prompt, temperature: 0.5, maxOutputTokens: 1024 },
+        { ...base, prompt, responseSchema: ASK_RESPONSE_SCHEMA, temperature: 0.5, maxOutputTokens: 1024 },
         fetchImpl,
       );
-      return { answer: stripMarkdown(cleanText(text, 1200)) };
+      const obj = toObject(text);
+      const answer = stripMarkdown(cleanText(obj?.answer, 1200));
+      if (!answer) return null;
+      const proposal = parseProposal(obj?.proposal, details, job.today);
+      return proposal ? { answer, proposal } : { answer };
+    }
+    case 'extract': {
+      const prompt = buildExtractPrompt(job.description, job.today);
+      const text = await generateText(
+        { ...base, prompt, responseSchema: EXTRACT_RESPONSE_SCHEMA, temperature: 0.1, maxOutputTokens: 1024 },
+        fetchImpl,
+      );
+      const extracted = parseExtracted(text, job.today);
+      return extracted ? { extracted } : null;
     }
   }
 }
@@ -150,11 +181,8 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
 
   // Allow one day of slack so users in any timezone can plan for "today".
   const today = addDays(todayIso(deps.now?.() ?? new Date()), -1);
-  const result = validateEventDetails(payload.details, today);
-  if (!result.ok) return json(400, { error: 'Invalid event details', fields: result.errors });
-
-  const job = parseJob(payload, result.value);
-  if (typeof job === 'string') return json(400, { error: job });
+  const job = parseJob(payload, today);
+  if ('error' in job) return json(400, job);
 
   const retryAfter = (deps.limiter ?? defaultLimiter).check(clientId(request));
   if (retryAfter > 0) {
@@ -163,7 +191,7 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
 
   if (!deps.apiKey) return json(503, { error: 'AI is not configured' });
 
-  // Ideas and logistics are deterministic enough to cache; conversations are not.
+  // Ideas, logistics and extraction are deterministic enough to cache; conversations are not.
   const cache = deps.cache ?? defaultCache;
   const cacheKey = job.mode === 'ask' ? '' : JSON.stringify(job);
   const cached = cacheKey ? cache.get(cacheKey) : undefined;

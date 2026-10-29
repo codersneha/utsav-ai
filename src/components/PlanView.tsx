@@ -1,13 +1,31 @@
+import {
+  CalendarDays,
+  CalendarPlus,
+  Download,
+  LayoutDashboard,
+  Lightbulb,
+  ListChecks,
+  MapPin,
+  MessageCircleHeart,
+  Pencil,
+  Printer,
+  RotateCcw,
+  Store,
+  Users,
+  Wallet,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Planner } from '../hooks/usePlanner';
 import { buildIcs, googleCalendarUrl } from '../lib/calendar';
+import { describeChanges } from '../lib/changes';
 import { daysBetween, formatDate } from '../lib/dates';
-import { formatInr } from '../lib/plan';
-import type { EventPlan } from '../types';
+import { buildPlan, formatInr } from '../lib/plan';
+import type { ChangeProposal, EventPlan } from '../types';
 import { AskPanel } from './AskPanel';
 import { BudgetPanel } from './BudgetPanel';
 import { ChecklistPanel } from './ChecklistPanel';
 import { IdeasPanel } from './IdeasPanel';
+import { Overview } from './Overview';
 import { Tabs } from './Tabs';
 import { TimelinePanel } from './TimelinePanel';
 
@@ -29,10 +47,12 @@ function downloadIcs(plan: EventPlan) {
   URL.revokeObjectURL(url);
 }
 
-/** The generated plan: summary, change report, export actions and tabbed sections. */
+const icon = (Icon: typeof Pencil) => <Icon size={18} aria-hidden="true" />;
+
+/** The generated plan: festive header, change report, and tabbed sections. */
 export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
   const { details } = plan;
-  const [tab, setTab] = useState('ideas');
+  const [tab, setTab] = useState('overview');
   const daysToGo = daysBetween(planner.today, details.date);
   const changeRef = useRef<HTMLDivElement>(null);
 
@@ -41,10 +61,41 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
     if (planner.change) changeRef.current?.focus();
   }, [planner.change]);
 
+  /** What applying an assistant proposal would change, shown before the user agrees. */
+  const previewProposal = (p: ChangeProposal) => {
+    const next = {
+      ...details,
+      ...(p.guests ? { guests: p.guests } : {}),
+      ...(p.budget ? { budget: p.budget } : {}),
+      ...(p.date ? { date: p.date } : {}),
+    };
+    const nextPlan = buildPlan(next, planner.today, { overrides: planner.budget.overrides });
+    return describeChanges(plan, nextPlan, planner.today).lines.filter(
+      (l) => !l.startsWith('Kept:') && !l.startsWith('Ideas and'),
+    );
+  };
+
   const tabs = [
+    {
+      id: 'overview',
+      label: 'Overview',
+      icon: icon(LayoutDashboard),
+      content: (
+        <Overview
+          plan={plan}
+          today={planner.today}
+          ideas={planner.ideas.value}
+          timelineDone={planner.timeline.done}
+          checklistDone={planner.checklist.done}
+          vendors={planner.vendors.entries}
+          onNavigate={setTab}
+        />
+      ),
+    },
     {
       id: 'ideas',
       label: 'Ideas',
+      icon: icon(Lightbulb),
       content: (
         <IdeasPanel
           ideas={planner.ideas.value}
@@ -58,6 +109,7 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
     {
       id: 'budget',
       label: 'Budget',
+      icon: icon(Wallet),
       content: (
         <BudgetPanel
           budget={plan.budget}
@@ -74,6 +126,7 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
     {
       id: 'timeline',
       label: 'Timeline',
+      icon: icon(ListChecks),
       content: (
         <TimelinePanel
           timeline={plan.timeline}
@@ -92,6 +145,7 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
     {
       id: 'checklist',
       label: 'Vendors',
+      icon: icon(Store),
       content: (
         <ChecklistPanel
           groups={plan.checklist}
@@ -111,12 +165,16 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
     {
       id: 'ask',
       label: 'Ask AI',
+      icon: icon(MessageCircleHeart),
       content: (
         <AskPanel
           turns={planner.chat.turns}
           asking={planner.chat.asking}
           onAsk={(q) => void planner.chat.ask(q)}
           onClear={planner.chat.clear}
+          onApply={planner.chat.applyProposal}
+          onDismiss={planner.chat.dismissProposal}
+          preview={previewProposal}
         />
       ),
     },
@@ -124,30 +182,57 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
 
   return (
     <div className="plan">
-      <section className="card summary" aria-labelledby="plan-title">
-        <p className="eyebrow">{TYPE_LABEL[details.eventType]}</p>
-        <h2 id="plan-title">{details.title || `Your ${TYPE_LABEL[details.eventType].toLowerCase()}`}</h2>
-        <p className="meta">
-          <time dateTime={details.date}>{formatDate(details.date)}</time> · {details.city} · {details.guests}{' '}
-          guests · {formatInr(details.budget)}
-        </p>
-        <p className="countdown">
-          {daysToGo > 0 ? `${daysToGo} days to go` : daysToGo === 0 ? 'It’s today!' : 'Event completed'}
-        </p>
+      <section className={`event-hero ${details.eventType}`} aria-labelledby="plan-title">
+        <div className="event-hero-top">
+          <div>
+            <p className="eyebrow">{TYPE_LABEL[details.eventType]}</p>
+            <h2 id="plan-title">{details.title || `Your ${TYPE_LABEL[details.eventType].toLowerCase()}`}</h2>
+            <ul className="event-meta" aria-label="Event details">
+              <li>
+                <CalendarDays size={16} aria-hidden="true" />
+                <time dateTime={details.date}>{formatDate(details.date)}</time>
+              </li>
+              <li>
+                <MapPin size={16} aria-hidden="true" /> {details.city}
+              </li>
+              <li>
+                <Users size={16} aria-hidden="true" /> {details.guests} guests
+              </li>
+              <li>
+                <Wallet size={16} aria-hidden="true" /> {formatInr(details.budget)}
+              </li>
+            </ul>
+          </div>
+          <p className="countdown-badge">
+            {daysToGo > 0 ? (
+              <>
+                <strong>{daysToGo}</strong>
+                <span>days to go</span>
+              </>
+            ) : (
+              <strong>{daysToGo === 0 ? 'Today!' : 'Done'}</strong>
+            )}
+          </p>
+        </div>
         <div className="actions no-print">
-          <button type="button" className="btn primary" onClick={onEdit}>
-            Change details
+          <button type="button" className="btn on-dark" onClick={onEdit}>
+            {icon(Pencil)} Change details
           </button>
-          <button type="button" className="btn" onClick={() => downloadIcs(plan)}>
-            Download timeline (.ics)
+          <button type="button" className="btn on-dark" onClick={() => downloadIcs(plan)}>
+            {icon(Download)} Download timeline (.ics)
           </button>
-          <a className="btn" href={googleCalendarUrl(details)} target="_blank" rel="noopener noreferrer">
-            Add to Google Calendar<span className="sr-only"> (opens in a new tab)</span>
+          <a
+            className="btn on-dark"
+            href={googleCalendarUrl(details)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {icon(CalendarPlus)} Add to Google Calendar<span className="sr-only"> (opens in a new tab)</span>
           </a>
-          <button type="button" className="btn" onClick={() => window.print()}>
-            Print / save PDF
+          <button type="button" className="btn on-dark" onClick={() => window.print()}>
+            {icon(Printer)} Print / save PDF
           </button>
-          <button type="button" className="btn ghost" onClick={planner.reset}>
+          <button type="button" className="btn on-dark" onClick={planner.reset}>
             Start a new plan
           </button>
         </div>
@@ -163,9 +248,16 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
         >
           <div className="panel-head">
             <h3 id="change-heading">Plan updated — here’s what changed</h3>
-            <button type="button" className="link-btn" onClick={planner.dismissChange}>
-              Dismiss
-            </button>
+            <div className="actions">
+              {planner.canUndo && (
+                <button type="button" className="btn small" onClick={planner.undo}>
+                  <RotateCcw size={16} aria-hidden="true" /> Undo
+                </button>
+              )}
+              <button type="button" className="link-btn" onClick={planner.dismissChange}>
+                Dismiss
+              </button>
+            </div>
           </div>
           <ul>
             {planner.change.lines.map((line) => (

@@ -7,6 +7,12 @@ import { axeViolations } from './test/axe';
 import { apiResponder } from './test/fixtures';
 import type { EventDetails } from './types';
 
+/** Clicks Next and waits until focus has moved to the new step's heading. */
+async function nextStep(user: ReturnType<typeof userEvent.setup>, title: string) {
+  await user.click(screen.getByRole('button', { name: /Next/ }));
+  await vi.waitFor(() => expect(screen.getByRole('heading', { name: title })).toHaveFocus());
+}
+
 const future = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
 const birthday: EventDetails = {
@@ -22,6 +28,7 @@ const birthday: EventDetails = {
   diets: ['jain'],
   ageGroup: 'kids',
   colors: '',
+  language: 'en',
 };
 
 /** Renders the app with a saved plan and a working (mocked) API. */
@@ -151,6 +158,7 @@ describe('vendors: AI advice and the user’s own records', () => {
 describe('ideas refinement and the planner conversation', () => {
   it('refines ideas without starting over', async () => {
     const { user, fetchSpy } = await openPlan();
+    await user.click(screen.getByRole('tab', { name: 'Ideas' }));
     await user.click(screen.getByRole('button', { name: 'Cheaper options' }));
     expect(await screen.findByText('Refined: Cheaper options')).toBeInTheDocument();
     await user.type(screen.getByLabelText(/Tell the AI what to change/), 'small terrace venue');
@@ -182,16 +190,17 @@ describe('revising the plan and exporting it', () => {
     await user.click(screen.getByLabelText('Send invitations'));
 
     await user.click(screen.getByRole('button', { name: 'Change details' }));
+    const date = screen.getByLabelText(/Event date/);
+    await user.clear(date);
+    await user.type(date, future(31));
+    await nextStep(user, 'Guests & budget');
     const guests = screen.getByLabelText(/Number of guests/);
     await user.clear(guests);
     await user.type(guests, '90');
     const budget = screen.getByLabelText(/Total budget/);
     await user.clear(budget);
     await user.type(budget, '50000');
-    const date = screen.getByLabelText(/Event date/);
-    await user.clear(date);
-    await user.type(date, future(31));
-    await user.click(screen.getByRole('button', { name: 'Update my plan' }));
+    await user.click(screen.getByRole('button', { name: /Update my plan/ }));
 
     const change = await screen.findByRole('region', { name: /Plan updated/ });
     expect(change).toHaveTextContent('Guests: 40 → 90 (+50)');

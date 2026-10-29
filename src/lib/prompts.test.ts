@@ -34,7 +34,13 @@ describe('prompts', () => {
 
   it('gives the ask prompt budget estimates and recent conversation', () => {
     const budget = buildBudget('birthday', 60_000, 40, []);
-    const prompt = buildAskPrompt(birthdayDetails, budget, [{ question: 'Q1', answer: 'A1' }], 'Rain plan?');
+    const prompt = buildAskPrompt(
+      birthdayDetails,
+      budget,
+      [{ question: 'Q1', answer: 'A1' }],
+      'Rain plan?',
+      '2026-10-29',
+    );
     expect(prompt).toContain('Food & cake: ₹');
     expect(prompt).toContain('EARLIER_CONVERSATION: [{"question":"Q1","answer":"A1"}]');
     expect(prompt).toContain('QUESTION: "Rain plan?"');
