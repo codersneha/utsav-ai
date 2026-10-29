@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { saveJson } from './lib/storage';
 import { axeViolations } from './test/axe';
-import { geminiIdeas } from './test/fixtures';
+import { apiResponder } from './test/fixtures';
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -23,12 +23,7 @@ async function fillForm(user: ReturnType<typeof userEvent.setup>) {
 
 describe('App end-to-end flow', () => {
   it('creates a plan, shows Gemini ideas and every planning section', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
-      const body = JSON.parse(String(init?.body));
-      return body.mode === 'ask'
-        ? jsonResponse({ answer: 'Book the venue first.' })
-        : jsonResponse({ ideas: geminiIdeas });
-    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
     const user = userEvent.setup();
     const { container } = render(<App />);
     expect(await axeViolations(container)).toEqual([]);
@@ -73,7 +68,7 @@ describe('App end-to-end flow', () => {
   });
 
   it('falls back to curated ideas when the AI is unavailable', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'x' }, 503));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({ error: 'x' }, 503));
     const user = userEvent.setup();
     render(<App />);
     await fillForm(user);
@@ -83,7 +78,7 @@ describe('App end-to-end flow', () => {
   });
 
   it('restores a saved plan, supports editing, regenerating and starting over', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({ ideas: geminiIdeas }));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
     saveJson('details', {
       eventType: 'community',
       title: 'Diwali Mela',
@@ -123,5 +118,25 @@ describe('App end-to-end flow', () => {
     window.localStorage.setItem('utsav-ai:v1:details', '{"eventType":"hack"}');
     render(<App />);
     expect(screen.getByRole('button', { name: 'Create my plan' })).toBeInTheDocument();
+  });
+});
+
+describe('plans saved by older versions', () => {
+  it('upgrades a v1 plan without the newer fields instead of crashing', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
+    window.localStorage.setItem(
+      'utsav-ai:v1:details',
+      JSON.stringify({
+        eventType: 'birthday',
+        title: 'Old plan',
+        date: '2026-12-20',
+        city: 'Pune',
+        guests: 40,
+        budget: 60000,
+      }),
+    );
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Old plan' })).toBeInTheDocument();
+    expect(await screen.findByText('Marigold')).toBeInTheDocument();
   });
 });

@@ -184,6 +184,7 @@ fieldset {
   border: 0;
   padding: 0;
   margin: 0;
+  min-width: 0;
 }
 
 legend {
@@ -620,14 +621,7 @@ progress {
   accent-color: var(--primary);
 }
 
-.vendor legend {
-  font-size: 1.05rem;
-  float: left;
-  width: 100%;
-}
-
 .vendor ul {
-  clear: both;
   list-style: none;
   padding: 0;
   margin: 0 0 0.75rem;

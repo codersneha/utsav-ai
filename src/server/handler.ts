@@ -176,7 +176,10 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
   };
   try {
     const body = await runJob(job, base, deps.fetchImpl);
-    if (!body) return json(502, { error: 'The AI returned an unusable answer' });
+    if (!body) {
+      console.error(`[generate] ${job.mode} failed: model output did not pass validation`);
+      return json(502, { error: 'The AI returned an unusable answer' });
+    }
     if (cacheKey) cache.set(cacheKey, body);
     return json(200, body);
   } catch (err) {

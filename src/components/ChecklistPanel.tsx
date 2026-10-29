@@ -144,8 +144,13 @@ function VendorCard({ group, ...props }: Props & { group: VendorGroup }) {
                   </option>
                 ))}
               </select>
-              <button type="button" className="link-btn" onClick={() => props.onRemoveVendor(entry.id)}>
-                Remove<span className="sr-only"> {entry.name}</span>
+              <button
+                type="button"
+                className="link-btn"
+                aria-label={`Remove ${entry.name}`}
+                onClick={() => props.onRemoveVendor(entry.id)}
+              >
+                Remove
               </button>
             </div>
           </li>

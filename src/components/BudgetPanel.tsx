@@ -85,8 +85,13 @@ export function BudgetPanel(props: Props) {
                   <strong>{t.title}</strong>
                   <p className="hint">{t.detail}</p>
                 </div>
-                <button type="button" className="btn" onClick={() => props.onApplyTradeOff(t.action)}>
-                  Apply<span className="sr-only">: {t.title}</span>
+                <button
+                  type="button"
+                  className="btn"
+                  aria-label={`Apply: ${t.title}`}
+                  onClick={() => props.onApplyTradeOff(t.action)}
+                >
+                  Apply
                 </button>
               </li>
             ))}
@@ -143,9 +148,10 @@ export function BudgetPanel(props: Props) {
                       <button
                         type="button"
                         className="link-btn"
+                        aria-label={`Reset ${line.label} to the estimate`}
                         onClick={() => props.onOverride(line.id, null)}
                       >
-                        Reset<span className="sr-only"> {line.label} to the estimate</span>
+                        Reset
                       </button>
                     )}
                   </td>

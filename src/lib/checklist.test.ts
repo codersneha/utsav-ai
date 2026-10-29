@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildChecklist, checklistProgress, mapsSearchUrl } from './checklist.js';
+import {
+  buildChecklist,
+  checklistProgress,
+  fallbackVendorAdvice,
+  mapsSearchUrl,
+  summariseQuotes,
+  vendorGroupsFor,
+} from './checklist.js';
 
 describe('checklist', () => {
   it('builds unique, stable item ids for each event type', () => {
@@ -23,5 +30,36 @@ describe('checklist', () => {
     expect(mapsSearchUrl('caterers', 'New Delhi')).toBe(
       'https://www.google.com/maps/search/?api=1&query=caterers%20in%20New%20Delhi',
     );
+  });
+});
+
+describe('vendor advice and records', () => {
+  it('appends AI tasks with stable, distinct ids and an ai flag', () => {
+    const groups = buildChecklist('wedding', {
+      caterer: { questions: [], tasks: ['Separate Jain counter'] },
+    });
+    const caterer = groups.find((g) => g.id === 'caterer')!;
+    const ai = caterer.items.filter((i) => i.ai);
+    expect(ai).toEqual([{ id: 'caterer-ai-0', task: 'Separate Jain counter', ai: true }]);
+    expect(caterer.budgetId).toBe('catering');
+  });
+
+  it('exposes vendor groups and curated fallback questions for every group', () => {
+    for (const type of ['wedding', 'birthday', 'community'] as const) {
+      const groups = vendorGroupsFor(type);
+      const advice = fallbackVendorAdvice(type);
+      groups.forEach((g) => expect(advice[g.id].questions.length).toBeGreaterThan(0));
+    }
+  });
+
+  it('summarises quotes per vendor group', () => {
+    const entries = [
+      { id: '1', groupId: 'venue', name: 'A', contact: '', quote: 90_000, status: 'quoted' as const },
+      { id: '2', groupId: 'venue', name: 'B', contact: '', quote: 70_000, status: 'confirmed' as const },
+      { id: '3', groupId: 'venue', name: 'C', contact: '', quote: 0, status: 'shortlisted' as const },
+      { id: '4', groupId: 'caterer', name: 'D', contact: '', quote: 10, status: 'quoted' as const },
+    ];
+    expect(summariseQuotes(entries, 'venue')).toEqual({ count: 3, lowest: 70_000, confirmed: entries[1] });
+    expect(summariseQuotes(entries, 'decorator')).toEqual({ count: 0, lowest: 0, confirmed: undefined });
   });
 });

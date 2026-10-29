@@ -16,6 +16,8 @@ describe('calendar export', () => {
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(milestones.length);
     expect(ics).toContain('DTSTART;VALUE=DATE:20270420');
     expect(ics).toContain('DTSTAMP:20261029T100000Z');
+    expect(ics.match(/BEGIN:VALARM/g)).toHaveLength(milestones.length);
+    expect(ics).toContain('TRIGGER:-P1D');
   });
 
   it('builds a Google Calendar template link', () => {

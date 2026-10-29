@@ -80,8 +80,13 @@ export function TimelinePanel(props: Props) {
                   <span>{m.task}</span>
                 </label>
                 {m.custom && (
-                  <button type="button" className="link-btn" onClick={() => props.onRemoveTask(m.id)}>
-                    Remove<span className="sr-only"> task: {m.task}</span>
+                  <button
+                    type="button"
+                    className="link-btn"
+                    aria-label={`Remove task: ${m.task}`}
+                    onClick={() => props.onRemoveTask(m.id)}
+                  >
+                    Remove
                   </button>
                 )}
               </div>

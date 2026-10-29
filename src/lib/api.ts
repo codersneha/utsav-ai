@@ -1,6 +1,7 @@
 import type { ChatTurn, EventDetails, Ideas, Logistics } from '../types.js';
 import { fallbackIdeas, parseIdeas } from './ideas.js';
-import { fallbackLogistics, parseLogistics } from './logistics.js';
+import { isLogistics } from './guards.js';
+import { fallbackLogistics } from './logistics.js';
 
 export const CLIENT_TIMEOUT_MS = 25_000;
 
@@ -80,7 +81,8 @@ export function fetchLogistics(details: EventDetails, signal?: AbortSignal): Pro
   return requestWithFallback(
     { mode: 'logistics', details },
     'logistics',
-    (raw) => parseLogistics(raw, details.eventType),
+    // The server has already validated the model output; check the response shape.
+    (raw) => (isLogistics(raw) && raw.daySchedule.length > 0 ? raw : null),
     () => fallbackLogistics(details.eventType),
     signal,
   );

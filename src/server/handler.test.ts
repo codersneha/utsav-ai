@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { geminiIdeas, geminiResponse, weddingDetails } from '../test/fixtures.js';
+import { geminiIdeas, geminiLogistics, geminiResponse, weddingDetails } from '../test/fixtures.js';
 import type { Ideas } from '../types.js';
 import { MAX_BODY_BYTES, handleGenerate, stripMarkdown, type HandlerDeps } from './handler.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
@@ -124,5 +124,81 @@ describe('stripMarkdown', () => {
     expect(stripMarkdown('## Plan 1. **Venue** first, then `food` and __decor__.')).toBe(
       'Plan 1. Venue first, then food and decor.',
     );
+  });
+});
+
+describe('handleGenerate — logistics, refinement and conversation', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('returns validated logistics and caches them', async () => {
+    const fetchImpl = vi.fn(async () =>
+      geminiResponse(JSON.stringify(geminiLogistics)),
+    ) as unknown as typeof fetch;
+    const d = deps({ fetchImpl });
+    const details = { ...weddingDetails, eventType: 'birthday' };
+    const res = await handleGenerate(post({ mode: 'logistics', details }), d);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.logistics.daySchedule[0].time).toBe('16:00');
+    expect(Object.keys(body.logistics.vendors)).toEqual(['caterer']);
+    const again = await handleGenerate(post({ mode: 'logistics', details }), d);
+    expect((await again.json()).cached).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 502 for unusable logistics', async () => {
+    const fetchImpl = (async () => geminiResponse('{"daySchedule":[]}')) as typeof fetch;
+    const res = await handleGenerate(
+      post({ mode: 'logistics', details: weddingDetails }),
+      deps({ fetchImpl }),
+    );
+    expect(res.status).toBe(502);
+  });
+
+  it('sends refinement feedback and previous themes to the model', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      geminiResponse(JSON.stringify(geminiIdeas)),
+    );
+    const res = await handleGenerate(
+      post({
+        mode: 'ideas',
+        details: weddingDetails,
+        refinement: 'cheaper',
+        previousThemes: ['Marigold', 5],
+      }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect(res.status).toBe(200);
+    const prompt = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).contents[0].parts[0].text;
+    expect(prompt).toContain('USER_FEEDBACK: "cheaper"');
+    expect(prompt).toContain('PREVIOUS_THEMES: ["Marigold"]');
+  });
+
+  it('rejects a too-short refinement', async () => {
+    const res = await handleGenerate(
+      post({ mode: 'ideas', details: weddingDetails, refinement: 'x' }),
+      deps(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('includes cleaned, capped conversation history in ask prompts', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => geminiResponse('Sure.'));
+    const history = [
+      ...Array.from({ length: 6 }, (_, i) => ({ question: `Q${i}`, answer: `A${i}` })),
+      { question: '', answer: 'orphan' },
+    ];
+    const res = await handleGenerate(
+      post({ mode: 'ask', details: weddingDetails, question: 'And then?', history }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect(res.status).toBe(200);
+    const prompt = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).contents[0].parts[0].text;
+    expect(prompt).toContain('"question":"Q0"');
+    expect(prompt).not.toContain('"question":"Q4"');
+    expect(prompt).not.toContain('orphan');
+    expect(prompt).toContain('BUDGET_ESTIMATES');
   });
 });

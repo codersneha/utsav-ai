@@ -11,12 +11,15 @@ import { validateEventDetails } from '../lib/validation';
 import type { ChatTurn, CustomTask, EventDetails, Ideas, Logistics, VendorEntry } from '../types';
 import { usePersistentState } from './usePersistentState';
 
-const isDetails = (v: unknown): v is EventDetails | null => {
-  if (v === null) return true;
-  const date = (v as { date?: unknown })?.date;
-  // Stored plans may be in the past, so validate relative to their own date.
-  return typeof date === 'string' && validateEventDetails(v, date).ok;
+/** Validates stored details relative to their own date (saved plans may be in the past). */
+const storedDetails = (v: unknown) => {
+  const date = (v as { date?: unknown } | null)?.date;
+  const result = typeof date === 'string' ? validateEventDetails(v, date) : null;
+  return result?.ok ? result.value : null;
 };
+const isDetails = (v: unknown): v is EventDetails | null => v === null || storedDetails(v) !== null;
+/** Upgrades plans saved by older versions (fills defaults for newer fields). */
+const normalizeDetails = (v: EventDetails | null) => (v === null ? null : storedDetails(v));
 const isStoredIdeas = (v: unknown): v is Ideas | null =>
   v === null || (parseIdeas(v) !== null && ['gemini', 'fallback'].includes((v as Ideas).source));
 const isStoredLogistics = (v: unknown): v is Logistics | null => v === null || isLogistics(v);
@@ -71,7 +74,12 @@ function useAiResource<T>(key: string, isValid: (v: unknown) => v is T | null) {
 
 /** All planner state and actions. Components stay presentational. */
 export function usePlanner() {
-  const [details, setDetails] = usePersistentState<EventDetails | null>('details', null, isDetails);
+  const [details, setDetails] = usePersistentState<EventDetails | null>(
+    'details',
+    null,
+    isDetails,
+    normalizeDetails,
+  );
   const [done, setDone] = usePersistentState<Record<string, boolean>>('done', {}, isRecordOf(isBoolean));
   const [timelineDone, setTimelineDone] = usePersistentState<Record<string, boolean>>(
     'timelineDone',

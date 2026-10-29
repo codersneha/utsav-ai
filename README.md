@@ -3,7 +3,7 @@
 > **PromptWars Virtual · Challenge 5 — Celebration & Event Planner**
 > _"Create a GenAI-powered planning assistant that helps users organize weddings, birthdays, and community events with budgets, timelines, vendor checklists, and personalized ideas."_
 
-UtsavAI (_utsav_ means "celebration" in Hindi) turns a few details about your event into a complete, editable plan in seconds. It gives you a budget that adds up to the rupee, a timeline that works back from your date, vendor checklists, and ideas personalised by **Google Gemini**. You can also ask the planner follow-up questions.
+UtsavAI (_utsav_ means "celebration" in Hindi) asks a few practical questions — occasion, date, city, guests, budget, venue, dietary needs, age group, style — and builds a complete, **editable** plan: a budget, a task timeline with a day-of schedule, vendor checklists with questions to ask, and ideas personalised by **Google Gemini**. When plans change ("50 more guests, a smaller budget, two weeks earlier"), it **revises the plan in place** and explains what changed — no starting over.
 
 **Live demo:** https://utsav-ai-one.vercel.app · **Demo video:** `<your-video-link>`
 
@@ -13,28 +13,39 @@ UtsavAI (_utsav_ means "celebration" in Hindi) turns a few details about your ev
 
 **Vertical:** personal and community celebrations in India: weddings, birthdays and community events (society fests, cultural nights, fundraisers). Defaults are INR, Indian vendor categories and Indian cultural context.
 
-**Approach: "AI for creativity, code for correctness."** LLMs are great at personalised, creative suggestions but unreliable with arithmetic and dates. So UtsavAI splits the work:
+**Persona:** a family member organising a celebration for the first time, whose biggest stress is _"Are we on budget, what do we do next, and what do we ask each vendor?"_
 
-| Layer                                         | Who does it                           | Why                                                           |
-| --------------------------------------------- | ------------------------------------- | ------------------------------------------------------------- |
-| Budget split, per-guest maths, spend tracking | Deterministic, unit-tested TypeScript | Numbers must always add up to your exact budget               |
-| Timeline & deadline compression               | Deterministic, unit-tested TypeScript | Dates must be correct and never in the past                   |
-| Vendor checklists                             | Curated templates per event type      | Reliable, complete, persistent progress                       |
-| Themes, decor, food, activities, saving tips  | **Gemini** (structured JSON output)   | Personalised to city, guests, budget, culture and preferences |
-| Free-form follow-up questions                 | **Gemini** with event context         | Conversational help ("How do I plan for rain?")               |
+**Approach: "AI for creativity, code for correctness — and the user stays in control."** LLMs are great at personalised, creative suggestions but unreliable with arithmetic and dates, and they must never invent prices or claim a vendor is available. So UtsavAI splits the work:
 
-If Gemini is unavailable (no key, quota, timeout, offline), the app **degrades gracefully** to curated ideas, so the user is never left with a blank screen.
+| Layer                                                                         | Who does it                                              | Why                                                                                   |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Budget split, per-guest maths, guest-count impact, trade-offs, spend tracking | Deterministic, unit-tested TypeScript                    | Numbers must add up to the rupee; estimates are labelled as estimates                 |
+| Timeline, priorities, dependencies, compression, slippage alerts              | Deterministic, unit-tested TypeScript                    | Dates must be correct and never silently in the past                                  |
+| Vendor records (names, contacts, quotes, booking status)                      | **The user**                                             | Only real information the user enters — never AI-invented businesses                  |
+| Themes, decor, menu, activities, saving tips (+ refinement)                   | **Gemini** (structured JSON output)                      | Personalised to city, guests, budget, venue, diet, age group and culture              |
+| Event-day run-of-show, vendor questions, tailored checklist tasks             | **Gemini** (structured JSON output)                      | Adapts logistics to this event; marked ✨ AI so users can tell suggestions from facts |
+| Follow-up conversation                                                        | **Gemini** with event, budget estimates and recent turns | "Ask, listen, adapt"                                                                  |
+
+If Gemini is unavailable (no key, quota, overload, timeout, offline), every AI feature **degrades gracefully** to curated content, so the user is never left with a blank screen.
 
 ## Problem statement → feature map
 
-| Requirement                           | Feature                                                                                                                                                                                                   |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GenAI-powered planning assistant      | Gemini generates personalised themes, decor, menu, activities and saving tips; an **Ask AI** tab answers follow-up questions with the event as context                                                    |
-| Weddings, birthdays, community events | Three event types, each with its own budget template, timeline, vendor checklist and fallback ideas                                                                                                       |
-| Budgets                               | Category split by event type, with **priority boosts** (e.g. "food matters most"), exact-rupee allocation, per-guest cost, unrealistic-budget warnings and an **expense tracker** with over-budget alerts |
-| Timelines                             | Milestones scheduled backwards from the event date and **auto-compressed** when lead time is short. Export to **.ics** or **Google Calendar**                                                             |
-| Vendor checklists                     | Per-vendor tasks with saved progress, plus **Google Maps** search links for vendors in your city                                                                                                          |
-| Personalised ideas                    | Driven by event type, city, date, guest count, budget, priorities and free-text preferences (traditions, colours, accessibility needs)                                                                    |
+Covers the one-line brief and the detailed expectations from the Challenge 5 explainer session.
+
+| Requirement                                                                 | Feature                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Intake: "ask a few practical questions"                                     | Occasion, date, city, guests, budget, priorities, **venue type, dietary needs, age group, colour palette**, free-text preferences — with accessible validation                                                                                            |
+| Budgets: categorise expenses, user can adjust, compare to actual            | Category split by event type with priority boosts; **every planned amount is editable** (labelled _Estimate_ vs _Your amount_); expense tracker with over-plan alerts; unallocated / over-allocated totals                                                |
+| "If the guest count increases, identify which cost"                         | Per-guest categories are marked, and the panel shows **what every 10 extra guests adds**                                                                                                                                                                  |
+| "Don't present AI prices as confirmed"                                      | Amounts are computed in code and labelled as estimates; vendor quotes only come from the user                                                                                                                                                             |
+| Trade-offs: "help users choose what matters most"                           | When food is underfunded or categories exceed the budget, UtsavAI offers **options the user chooses to apply**: fewer guests, a bigger budget, or moving money to food — never applied automatically                                                      |
+| Timelines: structured tasks, deadlines, completion, priorities, countdown   | Milestones scheduled back from the event date (auto-compressed when time is short), **High/Medium/Low priorities, tick-to-complete with progress**, user-added tasks, countdown, **.ics export with reminders** and Google Calendar                       |
+| "If venue booking is delayed, which tasks need attention?"                  | Tasks have **dependencies**; overdue tasks and the tasks that depend on them are flagged                                                                                                                                                                  |
+| Day-of schedule                                                             | **Gemini drafts an event-day run-of-show** (validated HH:MM times), with a curated fallback                                                                                                                                                               |
+| Vendors: define needs, questions to ask, organise quotes, pending/confirmed | Per-vendor checklist (+ ✨ AI tasks tailored to diet/venue/age group), **✨ AI questions to ask**, the user's own **vendor records** (name, contact, quote, status from shortlisted → confirmed), **lowest quote vs budget estimate**, Google Maps search |
+| Personalised ideas that "ask, listen and adapt"                             | Gemini themes, decor, menu, activities and saving tips; **refine with feedback** ("our venue is a small terrace") or quick options without restarting                                                                                                     |
+| Change test: "50 more guests, smaller budget, 2 weeks earlier"              | **Change details** revises in place and shows a **"what changed" report** (per-guest food, budget delta, tasks now due sooner or overdue) while keeping budget edits, completed tasks, vendors and spending                                               |
+| Conversational assistant                                                    | **Ask AI** remembers recent turns and sees the event and budget estimates                                                                                                                                                                                 |
 
 ## How it works
 
@@ -42,15 +53,17 @@ If Gemini is unavailable (no key, quota, timeout, offline), the app **degrades g
 Browser (React + TS, Vite)                        Vercel Function (Node)
 ┌───────────────────────────────┐   POST /api/generate   ┌──────────────────────────────┐
 │ PlannerForm ─validate─► plan  │ ─────────────────────► │ validate → rate-limit → cache│
-│ buildBudget / buildTimeline   │   {mode, details}      │ prompt (data, not commands)  │
+│ buildBudget / buildTimeline   │ {mode: ideas|logistics │ prompt (data, not commands)  │
+│ trade-offs / change report    │   |ask, details, …}    │                              │
 │ buildChecklist (pure TS)      │ ◄───────────────────── │ Gemini generateContent       │
 │ Ideas / Ask AI / tracker      │   validated JSON       │ (responseSchema JSON mode)   │
 │ localStorage (guarded)        │                        │ parse + sanitise output      │
 └───────────────────────────────┘                        └──────────────────────────────┘
 ```
 
-- `src/lib/`: pure, framework-free domain logic (budget, timeline, checklist, validation, prompts, calendar export).
-- `src/server/`: Gemini REST client, rate limiter, LRU cache and a pure `handleGenerate(Request) → Response`.
+- `src/lib/`: pure, framework-free domain logic — budget & trade-offs, timeline & dependencies, checklist & quotes, change report, validation, prompts, AI-output parsing, calendar export.
+- `src/hooks/usePlanner.ts`: all plan state and actions in one hook; components stay presentational.
+- `src/server/`: Gemini REST client (timeouts, retry, model fallback), rate limiter, LRU cache and a pure `handleGenerate(Request) → Response` with three modes: `ideas`, `logistics`, `ask`.
 - `api/generate.ts`: a 5-line Vercel Function entry. The **API key stays on the server**.
 - `src/components/`: accessible React UI. The plan view is lazy-loaded.
 
@@ -61,30 +74,33 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 - The Gemini key lives only in a server environment variable and is sent in the `x-goog-api-key` header, never in a URL or the browser.
 - **One validator shared by client and server** (`validateEventDetails`) does type checks, ranges and length caps, and strips control and markup characters.
 - **Prompt-injection hardening:** user input is passed as JSON _data_ with an explicit system instruction to ignore instructions inside it. Output is constrained by `responseSchema`.
-- **LLM output is treated as untrusted:** it is re-validated, length-capped and stripped of markup. React escapes everything, and there is no `dangerouslySetInnerHTML`.
-- API guards: method allow-list, `Content-Type` check, 8 KB body limit, per-IP sliding-window **rate limiting** (429 + `Retry-After`), generic error messages (no internals leaked) and `Cache-Control: no-store`.
+- **LLM output is treated as untrusted:** it is re-validated, length-capped and stripped of markup; invented vendor ids and malformed times are dropped. React escapes everything, and there is no `dangerouslySetInnerHTML`.
+- Data saved in the browser is re-validated on load (it may be stale or tampered with), and plans saved by older versions are upgraded safely.
+- API guards: method allow-list, `Content-Type` check, 16 KB body limit, capped conversation history, per-IP sliding-window **rate limiting** (429 + `Retry-After`), generic error messages (no internals leaked) and `Cache-Control: no-store`.
 - Security headers via `vercel.json`: a strict **CSP** (`default-src 'self'`, no inline scripts), HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` and `Permissions-Policy`.
 - External links use `rel="noopener noreferrer"`. No secrets are in the repo (`.env.example` only).
 
 ### ⚡ Efficiency
 
-- No AI SDK: a tiny `fetch`-based Gemini client keeps the function small. The total app JS is about 79 KB gzipped, and the plan view is **code-split** with `React.lazy`.
+- No AI SDK: a tiny `fetch`-based Gemini client keeps the function small. The app shell is about 84 KB gzipped and the plan view (7 KB) is **code-split** with `React.lazy`.
 - **Server LRU cache** (30 minutes) avoids paying twice for identical requests. Ideas are also cached in `localStorage`.
-- **Timeouts** with `AbortController` (20 s on the server, 25 s on the client). Stale requests are aborted when a new one starts.
+- **Ideas and logistics load in parallel**; the server caches both. Refinements only regenerate ideas.
+- **Timeouts and retries**: the 20 s server budget is split across two attempts; an overloaded or stalled call is retried once on a second Gemini model. The client times out at 25 s and aborts stale requests.
 - `useMemo` for derived plan and spend data. Immutable, long-cache headers for hashed assets.
 
 ### ✅ Testing
 
-- **89 tests across 17 files** (Vitest + Testing Library), with about **99% line and 92% branch coverage** (`npm run coverage`).
-- Unit tests cover the budget maths (exact sums, priority boosts, warnings), timeline compression, validation, prompt construction, output sanitisation, the calendar export, storage failure modes, the rate limiter and the cache.
-- API handler tests cover every guard (405/413/415/400/429/503/502) as well as caching and sanitisation, using a mocked Gemini.
-- Integration tests cover the full user journey (form → plan → ideas → budget → timeline → checklist → Ask AI), the fallback path, restoring a saved plan and corrupt storage.
+- **134 tests across 21 files** (Vitest + Testing Library), with about **99% line and 91% branch coverage** (`npm run coverage`).
+- Unit tests: budget maths (exact sums, priority boosts, user overrides, guest impact, trade-offs that really fix the plan), timeline (compression, priorities, dependencies, slippage alerts, custom tasks), checklist & quote summaries, the change report (including the explainer's "50 more guests, smaller budget, two weeks earlier" case), validation, prompts, AI-output parsing, storage guards, calendar export, rate limiter and cache.
+- API tests: every guard (405/413/415/400/429/503/502), all three modes, refinement, conversation-history capping, caching, retries and model fallback — with a mocked Gemini.
+- **Contract tests** feed the real server handler's response into the real browser client, so the two can't drift apart.
+- Integration tests drive each user flow: create → ideas → budget edits & trade-offs → timeline tasks → vendor records → refine → multi-turn chat → change details → export, plus fallback, corrupt storage and upgrading old saved plans.
 - **Automated accessibility tests** run axe-core at every major UI state.
 - CI (GitHub Actions) runs lint, typecheck, coverage and build on every push.
 
 ### ♿ Accessibility (WCAG 2.2 AA-minded)
 
-- Semantic landmarks, a skip link, and a logical heading order. Focus moves to the plan heading after submit.
+- Semantic landmarks, a skip link, and a logical heading order. Focus moves to the plan heading after submit, and to the change report after an edit.
 - An error summary with links to the invalid fields, plus `aria-invalid`, `aria-describedby` and inline messages.
 - WAI-ARIA **tabs** with roving tabindex and Arrow/Home/End keys. Native checkboxes, radios, `<progress>` and `<table>` with captions.
 - `aria-live` regions announce loading, ideas and answers. `aria-busy` is set during generation.

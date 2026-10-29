@@ -56,11 +56,28 @@ export const geminiLogistics = {
     { time: '19:00', activity: 'Cake cutting' },
   ],
   vendors: [
-    { id: 'caterer', questions: ['Is Jain food cooked separately?'], tasks: ['Confirm a separate Jain counter'] },
+    {
+      id: 'caterer',
+      questions: ['Is Jain food cooked separately?'],
+      tasks: ['Confirm a separate Jain counter'],
+    },
   ],
 };
 
-/** A fetch mock that answers each API mode like the real endpoint would. */
+/** What the API returns for `geminiLogistics` (already validated server-side). */
+export const apiLogistics = {
+  daySchedule: [
+    { time: '16:00', activity: 'Decor setup' },
+    { time: '18:00', activity: 'Guests arrive' },
+    { time: '19:00', activity: 'Cake cutting' },
+  ],
+  vendors: {
+    caterer: { questions: ['Is Jain food cooked separately?'], tasks: ['Confirm a separate Jain counter'] },
+  },
+  source: 'gemini',
+};
+
+/** A fetch mock that answers each API mode exactly like the real endpoint. */
 export function apiResponder(answer = 'Book the venue first.') {
   return async (_url: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
@@ -68,8 +85,15 @@ export function apiResponder(answer = 'Book the venue first.') {
       body.mode === 'ask'
         ? { answer }
         : body.mode === 'logistics'
-          ? { logistics: geminiLogistics }
-          : { ideas: body.refinement ? { ...geminiIdeas, summary: `Refined: ${body.refinement}` } : geminiIdeas };
-    return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          ? { logistics: apiLogistics }
+          : {
+              ideas: body.refinement
+                ? { ...geminiIdeas, summary: `Refined: ${body.refinement}` }
+                : geminiIdeas,
+            };
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   };
 }

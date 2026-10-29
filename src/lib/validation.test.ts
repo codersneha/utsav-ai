@@ -49,3 +49,27 @@ describe('validateEventDetails', () => {
     expect(validateEventDetails({ ...weddingDetails, priorities: 'food' }, TODAY).ok).toBe(true);
   });
 });
+
+describe('optional personalisation fields', () => {
+  it('keeps valid values and falls back to neutral defaults', () => {
+    const ok = validateEventDetails(weddingDetails, TODAY);
+    expect(ok.ok && ok.value).toMatchObject({ venueType: 'outdoor', diets: ['vegetarian', 'jain'] });
+
+    const legacy = validateEventDetails(
+      {
+        ...weddingDetails,
+        venueType: 'castle',
+        ageGroup: 'aliens',
+        diets: ['jain', 'jain', 'keto'],
+        colors: '<red>',
+      },
+      TODAY,
+    );
+    expect(legacy.ok && legacy.value).toMatchObject({
+      venueType: 'undecided',
+      ageGroup: 'mixed',
+      diets: ['jain'],
+      colors: 'red',
+    });
+  });
+});

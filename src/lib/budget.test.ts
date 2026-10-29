@@ -4,7 +4,9 @@ import {
   PRIORITY_BOOST,
   applyPriorities,
   buildBudget,
+  guestImpact,
   splitExact,
+  suggestTradeOffs,
   summariseSpend,
 } from './budget.js';
 
@@ -80,5 +82,80 @@ describe('summariseSpend', () => {
     expect(summary.spent).toBe(venue.amount + 1 + 5000);
     expect(summary.remaining).toBe(60_000 - summary.spent);
     expect(summary.overBudget).toEqual(['Venue']);
+  });
+});
+
+describe('user overrides', () => {
+  it('uses the user amount, flags it and reports unallocated money', () => {
+    const plan = buildBudget('birthday', 60_000, 40, [], { venue: 5000 });
+    const venue = plan.lines.find((l) => l.id === 'venue')!;
+    expect(venue.amount).toBe(5000);
+    expect(venue.overridden).toBe(true);
+    expect(plan.allocated).toBe(plan.lines.reduce((s, l) => s + l.amount, 0));
+    expect(plan.unallocated).toBe(60_000 - plan.allocated);
+    expect(plan.unallocated).toBeGreaterThan(0);
+  });
+
+  it('warns when categories exceed the total and ignores invalid overrides', () => {
+    const plan = buildBudget('birthday', 60_000, 40, [], { venue: 100_000, decor: -5, gifts: Number.NaN });
+    expect(plan.unallocated).toBeLessThan(0);
+    expect(plan.warnings.some((w) => w.includes('over the total'))).toBe(true);
+    expect(plan.lines.find((l) => l.id === 'decor')?.overridden).toBe(false);
+    expect(plan.lines.find((l) => l.id === 'gifts')?.overridden).toBe(false);
+  });
+
+  it('marks guest-scaled categories', () => {
+    const plan = buildBudget('wedding', 1_000_000, 100, []);
+    expect(plan.lines.filter((l) => l.scalesWithGuests).map((l) => l.id)).toEqual([
+      'catering',
+      'invites',
+      'transport',
+    ]);
+  });
+});
+
+describe('guestImpact', () => {
+  it('estimates the cost of extra guests from per-guest categories only', () => {
+    const plan = buildBudget('wedding', 1_000_000, 100, []);
+    const perGuest = plan.lines.filter((l) => l.scalesWithGuests).reduce((s, l) => s + l.amount / 100, 0);
+    expect(guestImpact(plan, 100, 10)).toBe(Math.round(perGuest * 10));
+    expect(guestImpact(plan, 0, 10)).toBe(0);
+  });
+});
+
+describe('suggestTradeOffs', () => {
+  it('offers nothing for a healthy budget', () => {
+    const plan = buildBudget('wedding', 2_500_000, 300, []);
+    expect(suggestTradeOffs('wedding', plan, 300, {})).toEqual([]);
+  });
+
+  it('offers fewer guests, a bigger budget and a shift to food when food is underfunded', () => {
+    const plan = buildBudget('wedding', 500_000, 400, []);
+    const options = suggestTradeOffs('wedding', plan, 400, {});
+    expect(options.map((o) => o.id)).toEqual(['guests', 'budget', 'shift']);
+
+    const guests = options[0].action;
+    expect(guests.kind === 'details' && guests.patch.guests).toBeLessThan(400);
+
+    const budget = options[1].action;
+    const newBudget = budget.kind === 'details' ? budget.patch.budget! : 0;
+    const raised = buildBudget('wedding', newBudget, 400, []);
+    expect(raised.lines.find((l) => l.id === 'catering')!.amount / 400).toBeGreaterThanOrEqual(600);
+
+    const shift = options[2].action;
+    expect(shift.kind).toBe('overrides');
+    if (shift.kind === 'overrides') {
+      const shifted = buildBudget('wedding', 500_000, 400, [], shift.overrides);
+      expect(shifted.allocated).toBe(500_000);
+      expect(shifted.lines.find((l) => l.id === 'catering')!.amount).toBe(600 * 400);
+      expect(shifted.warnings).toHaveLength(0);
+    }
+  });
+
+  it('offers to reset user amounts when they exceed the total', () => {
+    const overrides = { venue: 10_000_000 };
+    const plan = buildBudget('wedding', 2_500_000, 300, [], overrides);
+    const options = suggestTradeOffs('wedding', plan, 300, overrides);
+    expect(options[0]).toMatchObject({ id: 'reset', action: { kind: 'overrides', overrides: {} } });
   });
 });
