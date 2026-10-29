@@ -115,3 +115,21 @@ describe('generateText stall handling', () => {
     expect(Date.now() - started).toBeLessThan(6000);
   });
 });
+
+describe('generateText model fallback', () => {
+  it('retries on the next listed model when the first is overloaded', async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) =>
+      String(url).includes('/models/primary:')
+        ? new Response(JSON.stringify({ error: { message: 'high demand' } }), { status: 503 })
+        : geminiResponse('from backup'),
+    );
+    const text = await generateText(
+      { ...base, model: 'primary, backup' },
+      fetchImpl as typeof fetch,
+      5000,
+      0,
+    );
+    expect(text).toBe('from backup');
+    expect(String(fetchImpl.mock.calls[1][0])).toContain('/models/backup:generateContent');
+  });
+});

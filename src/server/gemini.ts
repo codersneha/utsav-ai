@@ -1,12 +1,16 @@
 /** Minimal Gemini REST client (no SDK, keeps the function bundle small). */
 
-/** Stable model verified to answer in ~3–5 s on the free tier (Oct 2026). */
-export const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
+/**
+ * Comma-separated models, tried in order on retry. Both answered in ~3–5 s on
+ * the free tier in testing (Oct 2026); the second covers demand spikes on the first.
+ */
+export const DEFAULT_MODEL = 'gemini-3.1-flash-lite,gemini-3-flash-preview';
 export const GEMINI_TIMEOUT_MS = 20_000;
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export interface GeminiRequest {
   apiKey: string;
+  /** One model id, or several separated by commas to fall back through. */
   model: string;
   systemInstruction: string;
   prompt: string;
@@ -50,7 +54,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * Calls generateContent and returns the concatenated text of the first
  * candidate. The time budget is split across attempts so that a stalled or
- * overloaded first call can be retried once without exceeding the timeout.
+ * overloaded first call can be retried once, on the next listed model,
+ * without exceeding the timeout.
  */
 export async function generateText(
   req: GeminiRequest,
@@ -60,11 +65,16 @@ export async function generateText(
 ): Promise<string> {
   // One deadline covers every attempt, so retries never exceed the timeout.
   const deadline = Date.now() + timeoutMs;
+  const models = req.model
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
   for (let attempt = 1; ; attempt++) {
     try {
       const attemptsLeft = MAX_ATTEMPTS - attempt + 1;
       const budget = Math.max(1, Math.floor((deadline - Date.now()) / attemptsLeft));
-      return await attemptGenerate(req, fetchImpl, budget);
+      const model = models[(attempt - 1) % models.length] ?? req.model;
+      return await attemptGenerate({ ...req, model }, fetchImpl, budget);
     } catch (err) {
       const retryable = err instanceof GeminiError && RETRYABLE.has(err.status);
       const timeLeft = deadline - Date.now() - retryDelayMs;
