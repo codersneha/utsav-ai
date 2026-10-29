@@ -75,7 +75,7 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 
 ### ✅ Testing
 
-- **83 tests across 17 files** (Vitest + Testing Library), with about **99% line and 92% branch coverage** (`npm run coverage`).
+- **88 tests across 17 files** (Vitest + Testing Library), with about **99% line and 92% branch coverage** (`npm run coverage`).
 - Unit tests cover the budget maths (exact sums, priority boosts, warnings), timeline compression, validation, prompt construction, output sanitisation, the calendar export, storage failure modes, the rate limiter and the cache.
 - API handler tests cover every guard (405/413/415/400/429/503/502) as well as caching and sanitisation, using a mocked Gemini.
 - Integration tests cover the full user journey (form → plan → ideas → budget → timeline → checklist → Ask AI), the fallback path, restoring a saved plan and corrupt storage.
@@ -119,7 +119,7 @@ vercel env add GEMINI_API_KEY # paste your key (Production + Preview)
 vercel --prod
 ```
 
-Optionally set `GEMINI_MODEL` to pin a specific Gemini model (the default is `gemini-flash-latest`).
+Optionally set `GEMINI_MODEL` to use a different Gemini model. The default is `gemini-3.1-flash-lite`, the fastest stable model in testing (about 3–5 s per request).
 
 ## Assumptions
 

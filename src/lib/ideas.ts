@@ -52,6 +52,7 @@ export function buildAskPrompt(details: EventDetails, question: string): string 
   return [
     'Answer the planner question below about this event in under 120 words.',
     'If it is unrelated to planning this event, politely say you can only help with event planning.',
+    'Reply in plain text without Markdown; use short numbered points if helpful.',
     `EVENT_DATA: ${JSON.stringify(data)}`,
     `QUESTION: ${JSON.stringify(question)}`,
   ].join('\n');

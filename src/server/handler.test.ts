@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { geminiIdeas, geminiResponse, weddingDetails } from '../test/fixtures.js';
 import type { Ideas } from '../types.js';
-import { MAX_BODY_BYTES, handleGenerate, type HandlerDeps } from './handler.js';
+import { MAX_BODY_BYTES, handleGenerate, stripMarkdown, type HandlerDeps } from './handler.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
 
 const NOW = () => new Date('2026-10-29T06:00:00Z');
@@ -78,6 +78,10 @@ describe('handleGenerate — request guards', () => {
 });
 
 describe('handleGenerate — Gemini calls', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
   it('returns validated ideas with security headers and caches them', async () => {
     const d = deps();
     const res = await handleGenerate(post({ mode: 'ideas', details: weddingDetails }), d);
@@ -112,5 +116,13 @@ describe('handleGenerate — Gemini calls', () => {
     );
     expect(res.status).toBe(200);
     expect((await res.json()).answer).toBe('Book b early /b .');
+  });
+});
+
+describe('stripMarkdown', () => {
+  it('removes emphasis, code ticks and heading marks', () => {
+    expect(stripMarkdown('## Plan 1. **Venue** first, then `food` and __decor__.')).toBe(
+      'Plan 1. Venue first, then food and decor.',
+    );
   });
 });

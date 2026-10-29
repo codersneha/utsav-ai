@@ -13,6 +13,11 @@ import { LruCache, RateLimiter } from './rateLimit.js';
 
 export const MAX_BODY_BYTES = 8 * 1024;
 
+/** Removes Markdown emphasis and heading marks the UI would show literally. */
+export function stripMarkdown(text: string): string {
+  return text.replace(/(\*\*|__|`)/g, '').replace(/(^|\s)#{1,6}\s/g, '$1');
+}
+
 export interface HandlerDeps {
   apiKey: string | undefined;
   model?: string;
@@ -114,8 +119,10 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
       { ...common, prompt: buildAskPrompt(details, question), temperature: 0.5, maxOutputTokens: 1024 },
       deps.fetchImpl,
     );
-    return json(200, { answer: cleanText(text, 1200) });
+    return json(200, { answer: stripMarkdown(cleanText(text, 1200)) });
   } catch (err) {
+    // Log the upstream reason for operators; the client only gets a generic message.
+    console.error(`[generate] ${mode} failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     const status = err instanceof GeminiError && err.status === 504 ? 504 : 502;
     return json(status, { error: 'The AI service is unavailable' });
   }
