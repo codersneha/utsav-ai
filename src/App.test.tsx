@@ -99,7 +99,9 @@ describe('App end-to-end flow', () => {
     expect(await screen.findByRole('heading', { name: 'Diwali Mela' })).toBeInTheDocument();
     expect(screen.getByText(/days to go/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Generate new ideas' }));
+    // The restored plan loads ideas on its own first; wait for that before regenerating.
+    expect(await screen.findByText('Marigold')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Generate new ideas' }));
     expect(await screen.findByText('Marigold')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit details' }));
