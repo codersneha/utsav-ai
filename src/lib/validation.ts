@@ -1,11 +1,25 @@
-import { EVENT_TYPES, PRIORITIES, type EventDetails, type EventType, type Priority } from '../types.js';
+import {
+  AGE_GROUPS,
+  DIETS,
+  EVENT_TYPES,
+  PRIORITIES,
+  VENUE_TYPES,
+  type AgeGroup,
+  type Diet,
+  type EventDetails,
+  type EventType,
+  type Priority,
+  type VenueType,
+} from '../types.js';
 import { daysBetween, parseIsoDate } from './dates.js';
 
 export const LIMITS = {
   titleMax: 80,
   cityMax: 60,
   preferencesMax: 400,
+  colorsMax: 60,
   questionMax: 300,
+  refinementMax: 200,
   guestsMin: 1,
   guestsMax: 5000,
   budgetMin: 1000,
@@ -37,6 +51,14 @@ function toInt(value: unknown): number {
 
 const isEventType = (v: unknown): v is EventType => EVENT_TYPES.includes(v as EventType);
 const isPriority = (v: unknown): v is Priority => PRIORITIES.includes(v as Priority);
+const isDiet = (v: unknown): v is Diet => DIETS.includes(v as Diet);
+const isVenueType = (v: unknown): v is VenueType => VENUE_TYPES.includes(v as VenueType);
+const isAgeGroup = (v: unknown): v is AgeGroup => AGE_GROUPS.includes(v as AgeGroup);
+
+/** Keeps only allowed values from an untrusted array, without duplicates. */
+function pickAllowed<T>(value: unknown, isAllowed: (v: unknown) => v is T, max: number): T[] {
+  return Array.isArray(value) ? [...new Set(value.filter(isAllowed))].slice(0, max) : [];
+}
 
 /**
  * Validates untrusted event input. The same function guards the form in the
@@ -73,10 +95,6 @@ export function validateEventDetails(input: unknown, today: string): ValidationR
     errors.budget = `Budget must be between ₹${LIMITS.budgetMin.toLocaleString('en-IN')} and ₹${LIMITS.budgetMax.toLocaleString('en-IN')}.`;
   }
 
-  const priorities = Array.isArray(raw.priorities)
-    ? [...new Set(raw.priorities.filter(isPriority))].slice(0, 2)
-    : [];
-
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
   return {
@@ -89,7 +107,12 @@ export function validateEventDetails(input: unknown, today: string): ValidationR
       guests,
       budget,
       preferences: cleanText(raw.preferences, LIMITS.preferencesMax),
-      priorities,
+      priorities: pickAllowed(raw.priorities, isPriority, 2),
+      // Optional fields fall back to neutral defaults, so older saved plans still load.
+      venueType: isVenueType(raw.venueType) ? raw.venueType : 'undecided',
+      diets: pickAllowed(raw.diets, isDiet, DIETS.length),
+      ageGroup: isAgeGroup(raw.ageGroup) ? raw.ageGroup : 'mixed',
+      colors: cleanText(raw.colors, LIMITS.colorsMax),
     },
   };
 }

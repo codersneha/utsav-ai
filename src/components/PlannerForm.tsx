@@ -1,7 +1,19 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { todayIso } from '../lib/dates';
 import { LIMITS, validateEventDetails, type FieldErrors } from '../lib/validation';
-import { EVENT_TYPES, PRIORITIES, type EventDetails, type EventType, type Priority } from '../types';
+import {
+  AGE_GROUPS,
+  DIETS,
+  EVENT_TYPES,
+  PRIORITIES,
+  VENUE_TYPES,
+  type AgeGroup,
+  type Diet,
+  type EventDetails,
+  type EventType,
+  type Priority,
+  type VenueType,
+} from '../types';
 
 const EVENT_LABELS: Record<EventType, { label: string; hint: string }> = {
   wedding: { label: 'Wedding', hint: 'Ceremonies, reception and family functions' },
@@ -15,6 +27,31 @@ const PRIORITY_LABELS: Record<Priority, string> = {
   photography: 'Photos & video',
   entertainment: 'Entertainment',
   venue: 'Venue',
+};
+
+const VENUE_LABELS: Record<VenueType, string> = {
+  undecided: 'Not decided yet',
+  banquet: 'Banquet hall / hotel',
+  outdoor: 'Outdoor / lawn',
+  home: 'At home',
+  'community-hall': 'Community hall / society',
+  temple: 'Temple / religious venue',
+};
+
+const AGE_LABELS: Record<AgeGroup, string> = {
+  mixed: 'All ages',
+  kids: 'Mostly kids',
+  teens: 'Mostly teens',
+  adults: 'Mostly adults',
+  seniors: 'Mostly seniors',
+};
+
+const DIET_LABELS: Record<Diet, string> = {
+  vegetarian: 'Vegetarian',
+  'non-vegetarian': 'Non-vegetarian',
+  jain: 'Jain',
+  vegan: 'Vegan',
+  'gluten-free': 'Gluten-free',
 };
 
 const FIELD_ORDER: (keyof EventDetails)[] = ['eventType', 'date', 'city', 'guests', 'budget'];
@@ -36,16 +73,36 @@ export function PlannerForm({ initial, onSubmit, onCancel }: Props) {
   const [budget, setBudget] = useState(initial ? String(initial.budget) : '');
   const [preferences, setPreferences] = useState(initial?.preferences ?? '');
   const [priorities, setPriorities] = useState<Priority[]>(initial?.priorities ?? []);
+  const [venueType, setVenueType] = useState<VenueType>(initial?.venueType ?? 'undecided');
+  const [ageGroup, setAgeGroup] = useState<AgeGroup>(initial?.ageGroup ?? 'mixed');
+  const [diets, setDiets] = useState<Diet[]>(initial?.diets ?? []);
+  const [colors, setColors] = useState(initial?.colors ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
   const summaryRef = useRef<HTMLDivElement>(null);
 
   const togglePriority = (p: Priority) =>
     setPriorities((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p].slice(-2)));
 
+  const toggleDiet = (d: Diet) =>
+    setDiets((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const result = validateEventDetails(
-      { eventType, title, date, city, guests, budget, preferences, priorities },
+      {
+        eventType,
+        title,
+        date,
+        city,
+        guests,
+        budget,
+        preferences,
+        priorities,
+        venueType,
+        ageGroup,
+        diets,
+        colors,
+      },
       today,
     );
     if (!result.ok) {
@@ -206,6 +263,55 @@ export function PlannerForm({ initial, onSubmit, onCancel }: Props) {
         </div>
       </fieldset>
 
+      <div className="grid-2">
+        <div className="field">
+          <label htmlFor="venueType">Venue type</label>
+          <select
+            id="venueType"
+            value={venueType}
+            onChange={(e) => setVenueType(e.target.value as VenueType)}
+          >
+            {VENUE_TYPES.map((v) => (
+              <option key={v} value={v}>
+                {VENUE_LABELS[v]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="ageGroup">Who are the guests?</label>
+          <select id="ageGroup" value={ageGroup} onChange={(e) => setAgeGroup(e.target.value as AgeGroup)}>
+            {AGE_GROUPS.map((a) => (
+              <option key={a} value={a}>
+                {AGE_LABELS[a]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="colors">Colour palette</label>
+          <input
+            id="colors"
+            value={colors}
+            maxLength={LIMITS.colorsMax}
+            placeholder="e.g. marigold and maroon"
+            onChange={(e) => setColors(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <fieldset className="priorities">
+        <legend>Dietary needs to cater for</legend>
+        <div className="chips">
+          {DIETS.map((d) => (
+            <label key={d} className={`chip ${diets.includes(d) ? 'selected' : ''}`}>
+              <input type="checkbox" checked={diets.includes(d)} onChange={() => toggleDiet(d)} />
+              {DIET_LABELS[d]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
       <div className="field">
         <label htmlFor="preferences">Style, traditions and special needs</label>
         <textarea
@@ -213,7 +319,7 @@ export function PlannerForm({ initial, onSubmit, onCancel }: Props) {
           rows={3}
           maxLength={LIMITS.preferencesMax}
           value={preferences}
-          placeholder="e.g. South Indian traditions, pastel colours, eco-friendly, wheelchair access for grandparents"
+          placeholder="e.g. South Indian traditions, eco-friendly, wheelchair access for grandparents"
           aria-describedby="preferences-count"
           onChange={(e) => setPreferences(e.target.value)}
         />

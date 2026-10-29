@@ -45,7 +45,7 @@ describe('App end-to-end flow', () => {
     await user.click(screen.getByRole('tab', { name: 'Budget' }));
     expect(screen.getByText('Catering')).toBeInTheDocument();
     await user.type(screen.getByLabelText('Amount spent on Venue & stay'), '9999999');
-    expect(screen.getByText(/Over budget in: Venue & stay/)).toBeInTheDocument();
+    expect(screen.getByText(/Spending is over plan in: Venue & stay/)).toBeInTheDocument();
     expect(await axeViolations(container)).toEqual([]);
 
     // Timeline.
@@ -55,7 +55,7 @@ describe('App end-to-end flow', () => {
     // Vendor checklist with persisted progress.
     await user.click(screen.getByRole('tab', { name: 'Vendors' }));
     await user.click(screen.getByLabelText('Visit at least 3 venues'));
-    expect(screen.getByText(/Progress: \d+% complete/)).not.toHaveTextContent('Progress: 0%');
+    expect(screen.getByText(/Checklist: \d+% complete/)).not.toHaveTextContent('Checklist: 0%');
     expect(screen.getAllByRole('link', { name: /on Google Maps/ })[0]).toHaveAttribute(
       'href',
       expect.stringContaining('google.com/maps/search'),
@@ -104,12 +104,12 @@ describe('App end-to-end flow', () => {
     await user.click(await screen.findByRole('button', { name: 'Generate new ideas' }));
     expect(await screen.findByText('Marigold')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.click(screen.getByRole('button', { name: 'Change details' }));
     expect(screen.getByLabelText(/City or town/)).toHaveValue('Indore');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(await screen.findByRole('heading', { name: 'Diwali Mela' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.click(screen.getByRole('button', { name: 'Change details' }));
     await user.click(screen.getByLabelText(/Birthday/));
     await user.click(screen.getByRole('button', { name: 'Update my plan' }));
     const summary = await screen.findByRole('region', { name: 'Diwali Mela' });

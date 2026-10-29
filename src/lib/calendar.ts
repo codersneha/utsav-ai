@@ -8,7 +8,7 @@ export function escapeIcs(text: string): string {
 
 const compact = (iso: string) => iso.replace(/-/g, '');
 
-/** Builds an .ics calendar with one all-day entry per milestone. */
+/** Builds an .ics calendar with one all-day entry (plus a reminder) per milestone. */
 export function buildIcs(details: EventDetails, milestones: Milestone[], stamp: Date = new Date()): string {
   const dtstamp = stamp
     .toISOString()
@@ -22,6 +22,12 @@ export function buildIcs(details: EventDetails, milestones: Milestone[], stamp: 
     `DTSTART;VALUE=DATE:${compact(m.due)}`,
     `DTEND;VALUE=DATE:${compact(addDays(m.due, 1))}`,
     `SUMMARY:${escapeIcs(`${name}: ${m.task}`)}`,
+    // Reminder the day before each task is due.
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${escapeIcs(`Reminder: ${m.task}`)}`,
+    'TRIGGER:-P1D',
+    'END:VALARM',
     'END:VEVENT',
   ]);
   return [

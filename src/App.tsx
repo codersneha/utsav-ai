@@ -1,96 +1,31 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useRef, useState } from 'react';
 import { PlannerForm } from './components/PlannerForm';
-import { usePersistentState } from './hooks/usePersistentState';
-import { fetchIdeas } from './lib/api';
-import { todayIso } from './lib/dates';
-import { parseIdeas } from './lib/ideas';
-import { buildPlan } from './lib/plan';
-import { isBoolean, isNumber, isRecordOf } from './lib/storage';
-import { validateEventDetails } from './lib/validation';
-import type { EventDetails, Ideas } from './types';
+import { usePlanner } from './hooks/usePlanner';
+import type { EventDetails } from './types';
 
 const PlanView = lazy(() => import('./components/PlanView'));
 
-const isDetails = (v: unknown): v is EventDetails | null => {
-  if (v === null) return true;
-  const date = (v as { date?: unknown })?.date;
-  // Stored plans may be in the past, so validate relative to their own date.
-  return typeof date === 'string' && validateEventDetails(v, date).ok;
-};
-const isStoredIdeas = (v: unknown): v is Ideas | null =>
-  v === null || (parseIdeas(v) !== null && ['gemini', 'fallback'].includes((v as Ideas).source));
-
 export default function App() {
-  const [details, setDetails] = usePersistentState<EventDetails | null>('details', null, isDetails);
-  const [ideas, setIdeas] = usePersistentState<Ideas | null>('ideas', null, isStoredIdeas);
-  const [done, setDone] = usePersistentState<Record<string, boolean>>('done', {}, isRecordOf(isBoolean));
-  const [spent, setSpent] = usePersistentState<Record<string, number>>('spent', {}, isRecordOf(isNumber));
+  const planner = usePlanner();
+  const { plan, details } = planner;
   const [editing, setEditing] = useState(false);
-  // A plan restored from storage without ideas starts in the loading state.
-  const [ideasLoading, setIdeasLoading] = useState(() => details !== null && ideas === null);
-  const [ideasNotice, setIdeasNotice] = useState<string>();
   const [status, setStatus] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const plan = useMemo(() => (details ? buildPlan(details, todayIso()) : null), [details]);
-
-  /** Fetches ideas; only updates state after the request settles. */
-  const requestIdeas = useCallback(
-    async (d: EventDetails) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      try {
-        const result = await fetchIdeas(d, controller.signal);
-        setIdeas(result.ideas);
-        setIdeasNotice(result.notice);
-        setStatus('Ideas are ready.');
-      } catch {
-        // Aborted because a newer request started.
-      } finally {
-        if (abortRef.current === controller) setIdeasLoading(false);
-      }
-    },
-    [setIdeas],
-  );
-
-  const regenerateIdeas = (d: EventDetails) => {
-    setIdeasLoading(true);
-    setIdeasNotice(undefined);
-    void requestIdeas(d);
-  };
-
-  // Any plan without ideas (new, edited or restored from storage) fetches them.
-  useEffect(() => {
-    if (!details || ideas !== null) return;
-    const timer = setTimeout(() => void requestIdeas(details), 0);
-    return () => clearTimeout(timer);
-  }, [details, ideas, requestIdeas]);
-
   const handleSubmit = (next: EventDetails) => {
-    const typeChanged = details?.eventType !== next.eventType;
-    setDetails(next);
+    const isEdit = plan !== null;
+    planner.submit(next);
     setEditing(false);
-    if (typeChanged) {
-      setDone({});
-      setSpent({});
-    }
-    setIdeas(null);
-    setIdeasLoading(true);
-    setIdeasNotice(undefined);
-    setStatus('Your plan is ready. Personalised ideas are loading.');
-    requestAnimationFrame(() => headingRef.current?.focus());
+    setStatus(
+      isEdit
+        ? 'Plan updated. A summary of the changes is shown.'
+        : 'Your plan is ready. AI suggestions are loading.',
+    );
+    if (!isEdit) requestAnimationFrame(() => headingRef.current?.focus());
   };
 
   const handleReset = () => {
-    abortRef.current?.abort();
-    setIdeasLoading(false);
-    setDetails(null);
-    setIdeas(null);
-    setDone({});
-    setSpent({});
-    setIdeasNotice(undefined);
+    planner.reset();
     setStatus('Started a new plan.');
   };
 
@@ -122,8 +57,10 @@ export default function App() {
               <section className="hero" aria-label="Introduction">
                 <h2>Plan your celebration in minutes</h2>
                 <p>
-                  Get a budget split that adds up to the rupee, a timeline that works back from your date,
-                  vendor checklists and ideas personalised by Google Gemini.
+                  Answer a few questions and get an editable plan: a budget that adds up to the rupee, a
+                  timeline with a day-of schedule, vendor checklists with questions to ask, and ideas
+                  personalised by Google Gemini. Change anything later — the plan adapts instead of starting
+                  over.
                 </p>
               </section>
             )}
@@ -136,17 +73,9 @@ export default function App() {
         ) : (
           <Suspense fallback={<p className="muted">Loading your plan…</p>}>
             <PlanView
+              planner={{ ...planner, reset: handleReset }}
               plan={plan}
-              ideas={ideas}
-              ideasLoading={ideasLoading}
-              ideasNotice={ideasNotice}
-              onRegenerateIdeas={() => regenerateIdeas(plan.details)}
-              done={done}
-              onToggleTask={(id) => setDone((d) => ({ ...d, [id]: !d[id] }))}
-              spent={spent}
-              onSpentChange={(id, amount) => setSpent((s) => ({ ...s, [id]: amount }))}
               onEdit={() => setEditing(true)}
-              onReset={handleReset}
             />
           </Suspense>
         )}
@@ -154,7 +83,8 @@ export default function App() {
       <footer className="site-footer">
         <div className="container">
           <p>
-            Built for PromptWars Virtual · Ideas by Google Gemini · Your plan is saved only in this browser.
+            Built for PromptWars Virtual · AI by Google Gemini · Estimates are not quotes · Your plan is saved
+            only in this browser.
           </p>
         </div>
       </footer>

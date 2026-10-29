@@ -1,11 +1,12 @@
-import type { EventDetails, Ideas } from '../types.js';
+import type { ChatTurn, EventDetails, Ideas, Logistics } from '../types.js';
 import { fallbackIdeas, parseIdeas } from './ideas.js';
+import { fallbackLogistics, parseLogistics } from './logistics.js';
 
 export const CLIENT_TIMEOUT_MS = 25_000;
 
-export interface IdeasResult {
-  ideas: Ideas;
-  /** Set when we fell back to built-in ideas, explaining why. */
+export interface AiResult<T> {
+  value: T;
+  /** Set when we fell back to curated content, explaining why. */
   notice?: string;
 }
 
@@ -27,37 +28,77 @@ async function postJson(body: unknown, signal?: AbortSignal): Promise<Response> 
 
 function noticeFor(status: number): string {
   if (status === 429)
-    return 'You are generating ideas quickly — showing our curated ideas for now. Try again in a minute.';
-  if (status === 503) return 'AI ideas are not configured on this deployment — showing curated ideas.';
-  return 'The AI service is busy — showing curated ideas instead.';
+    return 'You are generating quickly — showing curated suggestions for now. Try again in a minute.';
+  if (status === 503) return 'AI is not configured on this deployment — showing curated suggestions.';
+  return 'The AI service is busy — showing curated suggestions instead.';
 }
 
+const OFFLINE = 'You appear to be offline — showing curated suggestions.';
+
 /**
- * Requests personalised ideas from the API. Never throws for network or
- * model failures: it degrades to curated ideas so the user is never stuck.
+ * Calls the API and validates the response. Never throws for network or
+ * model failures: it degrades to curated content so the user is never stuck.
  */
-export async function fetchIdeas(details: EventDetails, signal?: AbortSignal): Promise<IdeasResult> {
+async function requestWithFallback<T>(
+  body: unknown,
+  key: string,
+  parse: (raw: unknown) => T | null,
+  fallback: () => T,
+  signal?: AbortSignal,
+): Promise<AiResult<T>> {
   try {
-    const res = await postJson({ mode: 'ideas', details }, signal);
-    if (!res.ok) return { ideas: fallbackIdeas(details), notice: noticeFor(res.status) };
-    const data: unknown = await res.json();
-    const ideas = parseIdeas((data as { ideas?: unknown })?.ideas);
-    if (!ideas) return { ideas: fallbackIdeas(details), notice: noticeFor(502) };
-    return { ideas };
+    const res = await postJson(body, signal);
+    if (!res.ok) return { value: fallback(), notice: noticeFor(res.status) };
+    const data = (await res.json()) as Record<string, unknown>;
+    const value = parse(data?.[key]);
+    return value ? { value } : { value: fallback(), notice: noticeFor(502) };
   } catch (err) {
     if (signal?.aborted) throw err;
-    return { ideas: fallbackIdeas(details), notice: 'You appear to be offline — showing curated ideas.' };
+    return { value: fallback(), notice: OFFLINE };
   }
 }
 
-/** Asks a free-form planning question. Returns a friendly message on failure. */
-export async function askPlanner(details: EventDetails, question: string): Promise<string> {
+export interface RefineOptions {
+  request: string;
+  previousThemes: string[];
+}
+
+/** Personalised ideas; pass `refine` to adapt the previous ideas to feedback. */
+export function fetchIdeas(
+  details: EventDetails,
+  signal?: AbortSignal,
+  refine?: RefineOptions,
+): Promise<AiResult<Ideas>> {
+  const body = refine
+    ? { mode: 'ideas', details, refinement: refine.request, previousThemes: refine.previousThemes }
+    : { mode: 'ideas', details };
+  return requestWithFallback(body, 'ideas', parseIdeas, () => fallbackIdeas(details), signal);
+}
+
+/** Day-of schedule and per-vendor questions/tasks. */
+export function fetchLogistics(details: EventDetails, signal?: AbortSignal): Promise<AiResult<Logistics>> {
+  return requestWithFallback(
+    { mode: 'logistics', details },
+    'logistics',
+    (raw) => parseLogistics(raw, details.eventType),
+    () => fallbackLogistics(details.eventType),
+    signal,
+  );
+}
+
+/** Asks a follow-up question with recent conversation as context. */
+export async function askPlanner(
+  details: EventDetails,
+  question: string,
+  history: ChatTurn[] = [],
+): Promise<string> {
   try {
-    const res = await postJson({ mode: 'ask', details, question });
-    if (!res.ok)
+    const res = await postJson({ mode: 'ask', details, question, history: history.slice(-4) });
+    if (!res.ok) {
       return res.status === 429
         ? 'Too many questions at once — please wait a minute.'
         : 'Sorry, I could not answer right now. Please try again shortly.';
+    }
     const data = (await res.json()) as { answer?: unknown };
     return typeof data.answer === 'string' && data.answer ? data.answer : 'Sorry, I could not answer that.';
   } catch {

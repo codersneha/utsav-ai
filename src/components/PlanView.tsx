@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { Planner } from '../hooks/usePlanner';
 import { buildIcs, googleCalendarUrl } from '../lib/calendar';
-import { daysBetween, formatDate, todayIso } from '../lib/dates';
+import { daysBetween, formatDate } from '../lib/dates';
 import { formatInr } from '../lib/plan';
-import type { EventPlan, Ideas } from '../types';
+import type { EventPlan } from '../types';
 import { AskPanel } from './AskPanel';
 import { BudgetPanel } from './BudgetPanel';
 import { ChecklistPanel } from './ChecklistPanel';
@@ -13,17 +14,9 @@ import { TimelinePanel } from './TimelinePanel';
 const TYPE_LABEL = { wedding: 'Wedding', birthday: 'Birthday', community: 'Community event' } as const;
 
 export interface PlanViewProps {
+  planner: Planner;
   plan: EventPlan;
-  ideas: Ideas | null;
-  ideasLoading: boolean;
-  ideasNotice?: string;
-  onRegenerateIdeas: () => void;
-  done: Record<string, boolean>;
-  onToggleTask: (id: string) => void;
-  spent: Record<string, number>;
-  onSpentChange: (id: string, amount: number) => void;
   onEdit: () => void;
-  onReset: () => void;
 }
 
 function downloadIcs(plan: EventPlan) {
@@ -36,12 +29,17 @@ function downloadIcs(plan: EventPlan) {
   URL.revokeObjectURL(url);
 }
 
-/** The generated plan: summary, export actions and tabbed sections. */
-export default function PlanView(props: PlanViewProps) {
-  const { plan } = props;
+/** The generated plan: summary, change report, export actions and tabbed sections. */
+export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
   const { details } = plan;
   const [tab, setTab] = useState('ideas');
-  const daysToGo = daysBetween(todayIso(), details.date);
+  const daysToGo = daysBetween(planner.today, details.date);
+  const changeRef = useRef<HTMLDivElement>(null);
+
+  // Move focus to the change report so keyboard and screen-reader users hear what changed.
+  useEffect(() => {
+    if (planner.change) changeRef.current?.focus();
+  }, [planner.change]);
 
   const tabs = [
     {
@@ -49,19 +47,48 @@ export default function PlanView(props: PlanViewProps) {
       label: 'Ideas',
       content: (
         <IdeasPanel
-          ideas={props.ideas}
-          loading={props.ideasLoading}
-          notice={props.ideasNotice}
-          onRegenerate={props.onRegenerateIdeas}
+          ideas={planner.ideas.value}
+          loading={planner.ideas.loading}
+          notice={planner.ideas.notice}
+          onRegenerate={planner.ideas.regenerate}
+          onRefine={planner.ideas.refine}
         />
       ),
     },
     {
       id: 'budget',
       label: 'Budget',
-      content: <BudgetPanel budget={plan.budget} spent={props.spent} onSpentChange={props.onSpentChange} />,
+      content: (
+        <BudgetPanel
+          budget={plan.budget}
+          eventType={details.eventType}
+          guests={details.guests}
+          overrides={planner.budget.overrides}
+          spent={planner.budget.spent}
+          onOverride={planner.budget.setOverride}
+          onSpentChange={planner.budget.setSpent}
+          onApplyTradeOff={planner.budget.applyTradeOff}
+        />
+      ),
     },
-    { id: 'timeline', label: 'Timeline', content: <TimelinePanel timeline={plan.timeline} /> },
+    {
+      id: 'timeline',
+      label: 'Timeline',
+      content: (
+        <TimelinePanel
+          timeline={plan.timeline}
+          today={planner.today}
+          eventDate={details.date}
+          done={planner.timeline.done}
+          onToggle={planner.timeline.toggle}
+          onAddTask={planner.timeline.addTask}
+          onRemoveTask={planner.timeline.removeTask}
+          logistics={planner.logistics.value}
+          logisticsLoading={planner.logistics.loading}
+          logisticsNotice={planner.logistics.notice}
+        />
+      ),
+    },
     {
       id: 'checklist',
       label: 'Vendors',
@@ -69,12 +96,30 @@ export default function PlanView(props: PlanViewProps) {
         <ChecklistPanel
           groups={plan.checklist}
           city={details.city}
-          done={props.done}
-          onToggle={props.onToggleTask}
+          budget={plan.budget}
+          done={planner.checklist.done}
+          onToggle={planner.checklist.toggle}
+          logistics={planner.logistics.value}
+          logisticsLoading={planner.logistics.loading}
+          entries={planner.vendors.entries}
+          onAddVendor={planner.vendors.add}
+          onUpdateVendor={planner.vendors.update}
+          onRemoveVendor={planner.vendors.remove}
         />
       ),
     },
-    { id: 'ask', label: 'Ask AI', content: <AskPanel details={details} /> },
+    {
+      id: 'ask',
+      label: 'Ask AI',
+      content: (
+        <AskPanel
+          turns={planner.chat.turns}
+          asking={planner.chat.asking}
+          onAsk={(q) => void planner.chat.ask(q)}
+          onClear={planner.chat.clear}
+        />
+      ),
+    },
   ];
 
   return (
@@ -90,6 +135,9 @@ export default function PlanView(props: PlanViewProps) {
           {daysToGo > 0 ? `${daysToGo} days to go` : daysToGo === 0 ? 'It’s today!' : 'Event completed'}
         </p>
         <div className="actions no-print">
+          <button type="button" className="btn primary" onClick={onEdit}>
+            Change details
+          </button>
           <button type="button" className="btn" onClick={() => downloadIcs(plan)}>
             Download timeline (.ics)
           </button>
@@ -99,14 +147,34 @@ export default function PlanView(props: PlanViewProps) {
           <button type="button" className="btn" onClick={() => window.print()}>
             Print / save PDF
           </button>
-          <button type="button" className="btn" onClick={props.onEdit}>
-            Edit details
-          </button>
-          <button type="button" className="btn ghost" onClick={props.onReset}>
+          <button type="button" className="btn ghost" onClick={planner.reset}>
             Start a new plan
           </button>
         </div>
       </section>
+
+      {planner.change && (
+        <div
+          className="card change"
+          ref={changeRef}
+          tabIndex={-1}
+          role="region"
+          aria-labelledby="change-heading"
+        >
+          <div className="panel-head">
+            <h3 id="change-heading">Plan updated — here’s what changed</h3>
+            <button type="button" className="link-btn" onClick={planner.dismissChange}>
+              Dismiss
+            </button>
+          </div>
+          <ul>
+            {planner.change.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Tabs tabs={tabs} active={tab} onChange={setTab} label="Plan sections" />
     </div>
   );

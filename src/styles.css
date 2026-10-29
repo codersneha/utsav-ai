@@ -250,12 +250,14 @@ legend {
 }
 
 input,
+select,
 textarea,
 button {
   font: inherit;
 }
 
 input:not([type='checkbox'], [type='radio']),
+select,
 textarea {
   width: 100%;
   padding: 0.6rem 0.75rem;
@@ -687,6 +689,199 @@ progress {
   padding: 1.25rem 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.badge.subtle {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.badge.ai {
+  background: var(--accent-soft);
+  color: var(--text);
+  border: 1px solid var(--accent);
+}
+
+.badge.prio-high {
+  background: var(--danger);
+  color: var(--surface);
+}
+
+.badge.prio-medium {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.badge.prio-low {
+  background: var(--border);
+  color: var(--text);
+}
+
+.tag {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0.25rem 0;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.875rem;
+  min-height: 24px;
+}
+
+.btn.small {
+  min-height: 36px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+.tradeoffs ul,
+.change ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.tradeoffs ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.tradeoffs li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+
+.tradeoffs,
+.change {
+  margin-bottom: 1rem;
+}
+
+.change {
+  border-left: 4px solid var(--accent);
+}
+
+.milestone.done p,
+.milestone.done .check span {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.late {
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.add-task,
+.day-schedule {
+  margin-top: 1.5rem;
+}
+
+.schedule {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.schedule li {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.schedule time {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+}
+
+.vendor h4 {
+  margin-bottom: 0.25rem;
+}
+
+.vendor h5 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.questions {
+  margin: 0.5rem 0;
+}
+
+.questions summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 24px;
+}
+
+.entry {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.entry-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.entry-actions select {
+  width: auto;
+  padding: 0.3rem 0.5rem;
+}
+
+.add-vendor {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.add-vendor label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.refine {
+  margin-bottom: 1rem;
+}
+
+.refine label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
 }
 
 @media (max-width: 600px) {

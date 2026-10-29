@@ -9,7 +9,7 @@ describe('fetchIdeas', () => {
   it('returns Gemini ideas on success', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ideas: geminiIdeas }));
     const result = await fetchIdeas(weddingDetails);
-    expect(result.ideas.source).toBe('gemini');
+    expect(result.value.source).toBe('gemini');
     expect(result.notice).toBeUndefined();
   });
 
@@ -20,13 +20,13 @@ describe('fetchIdeas', () => {
   ])('falls back with a helpful notice on HTTP %i', async (status, pattern) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'x' }, status));
     const result = await fetchIdeas(weddingDetails);
-    expect(result.ideas.source).toBe('fallback');
+    expect(result.value.source).toBe('fallback');
     expect(result.notice).toMatch(pattern);
   });
 
   it('falls back when the payload is unusable or the network fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ ideas: {} }));
-    expect((await fetchIdeas(weddingDetails)).ideas.source).toBe('fallback');
+    expect((await fetchIdeas(weddingDetails)).value.source).toBe('fallback');
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('offline'));
     expect((await fetchIdeas(weddingDetails)).notice).toMatch(/offline/);
   });

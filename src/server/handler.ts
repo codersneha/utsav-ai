@@ -1,17 +1,22 @@
+import { cleanList, cleanObjects } from '../lib/aiOutput.js';
+import { buildBudget } from '../lib/budget.js';
 import { addDays, todayIso } from '../lib/dates.js';
+import { IDEAS_RESPONSE_SCHEMA, parseIdeas } from '../lib/ideas.js';
+import { LOGISTICS_RESPONSE_SCHEMA, parseLogistics } from '../lib/logistics.js';
 import {
-  IDEAS_RESPONSE_SCHEMA,
   SYSTEM_INSTRUCTION,
   buildAskPrompt,
   buildIdeasPrompt,
-  parseIdeas,
-} from '../lib/ideas.js';
+  buildLogisticsPrompt,
+  type Refinement,
+} from '../lib/prompts.js';
 import { LIMITS, cleanText, validateEventDetails } from '../lib/validation.js';
-import type { Ideas } from '../types.js';
-import { DEFAULT_MODEL, GeminiError, generateText } from './gemini.js';
+import type { ChatTurn, EventDetails } from '../types.js';
+import { DEFAULT_MODEL, GeminiError, generateText, type GeminiRequest } from './gemini.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
 
-export const MAX_BODY_BYTES = 8 * 1024;
+export const MAX_BODY_BYTES = 16 * 1024;
+const MAX_HISTORY = 4;
 
 /** Removes Markdown emphasis and heading marks the UI would show literally. */
 export function stripMarkdown(text: string): string {
@@ -23,12 +28,12 @@ export interface HandlerDeps {
   model?: string;
   fetchImpl?: typeof fetch;
   limiter?: RateLimiter;
-  cache?: LruCache<Ideas>;
+  cache?: LruCache<unknown>;
   now?: () => Date;
 }
 
-const defaultLimiter = new RateLimiter(12, 60_000);
-const defaultCache = new LruCache<Ideas>(200, 30 * 60_000);
+const defaultLimiter = new RateLimiter(20, 60_000);
+const defaultCache = new LruCache<unknown>(300, 30 * 60_000);
 
 function json(status: number, body: unknown, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -45,6 +50,78 @@ function json(status: number, body: unknown, extra: Record<string, string> = {})
 function clientId(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for') ?? '';
   return forwarded.split(',')[0].trim() || request.headers.get('x-real-ip') || 'anonymous';
+}
+
+/** Validated, mode-specific request — everything the model sees has been cleaned. */
+type Job =
+  | { mode: 'ideas'; details: EventDetails; refinement?: Refinement }
+  | { mode: 'logistics'; details: EventDetails }
+  | { mode: 'ask'; details: EventDetails; question: string; history: ChatTurn[] };
+
+const pickTurn = (o: Record<string, unknown>): ChatTurn | null => {
+  const turn = { question: cleanText(o.question, LIMITS.questionMax), answer: cleanText(o.answer, 600) };
+  return turn.question && turn.answer ? turn : null;
+};
+
+/** Turns the untrusted payload into a Job, or an error message for a 400. */
+function parseJob(payload: Record<string, unknown>, details: EventDetails): Job | string {
+  switch (payload.mode) {
+    case 'ideas': {
+      const request = cleanText(payload.refinement, LIMITS.refinementMax);
+      if (!request) return { mode: 'ideas', details };
+      if (request.length < 3) return 'Refinement is too short';
+      return {
+        mode: 'ideas',
+        details,
+        refinement: { request, previousThemes: cleanList(payload.previousThemes, 4, 60) },
+      };
+    }
+    case 'logistics':
+      return { mode: 'logistics', details };
+    case 'ask': {
+      const question = cleanText(payload.question, LIMITS.questionMax);
+      if (question.length < 3) return 'Question is too short';
+      return {
+        mode: 'ask',
+        details,
+        question,
+        history: cleanObjects(payload.history, MAX_HISTORY, pickTurn),
+      };
+    }
+    default:
+      return 'Unknown mode';
+  }
+}
+
+/** Runs a job against Gemini and returns the response body, or null if the output was unusable. */
+async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?: typeof fetch) {
+  switch (job.mode) {
+    case 'ideas': {
+      const prompt = buildIdeasPrompt(job.details, job.refinement);
+      const text = await generateText({ ...base, prompt, responseSchema: IDEAS_RESPONSE_SCHEMA }, fetchImpl);
+      const ideas = parseIdeas(text);
+      return ideas ? { ideas } : null;
+    }
+    case 'logistics': {
+      const prompt = buildLogisticsPrompt(job.details);
+      const text = await generateText(
+        { ...base, prompt, responseSchema: LOGISTICS_RESPONSE_SCHEMA, temperature: 0.4 },
+        fetchImpl,
+      );
+      const logistics = parseLogistics(text, job.details.eventType);
+      return logistics ? { logistics } : null;
+    }
+    case 'ask': {
+      const { details } = job;
+      const budget = buildBudget(details.eventType, details.budget, details.guests, details.priorities);
+      const prompt = buildAskPrompt(details, budget, job.history, job.question);
+      const text = await generateText(
+        { ...base, prompt, temperature: 0.5, maxOutputTokens: 1024 },
+        fetchImpl,
+      );
+      return { answer: stripMarkdown(cleanText(text, 1200)) };
+    }
+  }
 }
 
 /**
@@ -71,17 +148,13 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
     return json(400, { error: 'Invalid JSON' });
   }
 
-  const mode = payload.mode;
-  if (mode !== 'ideas' && mode !== 'ask') return json(400, { error: 'Unknown mode' });
-
   // Allow one day of slack so users in any timezone can plan for "today".
   const today = addDays(todayIso(deps.now?.() ?? new Date()), -1);
   const result = validateEventDetails(payload.details, today);
   if (!result.ok) return json(400, { error: 'Invalid event details', fields: result.errors });
-  const details = result.value;
 
-  const question = mode === 'ask' ? cleanText(payload.question, LIMITS.questionMax) : '';
-  if (mode === 'ask' && question.length < 3) return json(400, { error: 'Question is too short' });
+  const job = parseJob(payload, result.value);
+  if (typeof job === 'string') return json(400, { error: job });
 
   const retryAfter = (deps.limiter ?? defaultLimiter).check(clientId(request));
   if (retryAfter > 0) {
@@ -90,39 +163,25 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
 
   if (!deps.apiKey) return json(503, { error: 'AI is not configured' });
 
+  // Ideas and logistics are deterministic enough to cache; conversations are not.
   const cache = deps.cache ?? defaultCache;
-  const cacheKey = JSON.stringify(details);
-  if (mode === 'ideas') {
-    const cached = cache.get(cacheKey);
-    if (cached) return json(200, { ideas: cached, cached: true });
-  }
+  const cacheKey = job.mode === 'ask' ? '' : JSON.stringify(job);
+  const cached = cacheKey ? cache.get(cacheKey) : undefined;
+  if (cached) return json(200, { ...(cached as object), cached: true });
 
-  const common = {
+  const base = {
     apiKey: deps.apiKey,
     model: deps.model || DEFAULT_MODEL,
     systemInstruction: SYSTEM_INSTRUCTION,
   };
-
   try {
-    if (mode === 'ideas') {
-      const text = await generateText(
-        { ...common, prompt: buildIdeasPrompt(details), responseSchema: IDEAS_RESPONSE_SCHEMA },
-        deps.fetchImpl,
-      );
-      const ideas = parseIdeas(text);
-      if (!ideas) return json(502, { error: 'The AI returned an unusable answer' });
-      cache.set(cacheKey, ideas);
-      return json(200, { ideas });
-    }
-
-    const text = await generateText(
-      { ...common, prompt: buildAskPrompt(details, question), temperature: 0.5, maxOutputTokens: 1024 },
-      deps.fetchImpl,
-    );
-    return json(200, { answer: stripMarkdown(cleanText(text, 1200)) });
+    const body = await runJob(job, base, deps.fetchImpl);
+    if (!body) return json(502, { error: 'The AI returned an unusable answer' });
+    if (cacheKey) cache.set(cacheKey, body);
+    return json(200, body);
   } catch (err) {
     // Log the upstream reason for operators; the client only gets a generic message.
-    console.error(`[generate] ${mode} failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    console.error(`[generate] ${job.mode} failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     const status = err instanceof GeminiError && err.status === 504 ? 504 : 502;
     return json(status, { error: 'The AI service is unavailable' });
   }
