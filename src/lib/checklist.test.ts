@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildChecklist, checklistProgress, mapsSearchUrl } from './checklist';
+import { buildChecklist, checklistProgress, mapsSearchUrl } from './checklist.js';
 
 describe('checklist', () => {
   it('builds unique, stable item ids for each event type', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TIMELINE_TEMPLATES, buildTimeline } from './timeline';
+import { TIMELINE_TEMPLATES, buildTimeline } from './timeline.js';
 
 describe('buildTimeline', () => {
   it('schedules milestones backwards from the event with ideal lead time', () => {

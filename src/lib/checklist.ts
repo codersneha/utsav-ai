@@ -1,4 +1,4 @@
-import type { EventType, VendorGroup } from '../types';
+import type { EventType, VendorGroup } from '../types.js';
 
 type GroupSpec = Omit<VendorGroup, 'items'> & { tasks: string[] };
 

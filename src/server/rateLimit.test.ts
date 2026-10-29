@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LruCache, RateLimiter } from './rateLimit';
+import { LruCache, RateLimiter } from './rateLimit.js';
 
 describe('RateLimiter', () => {
   it('allows up to the limit and then reports retry seconds', () => {

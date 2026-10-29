@@ -6,7 +6,7 @@ import {
   buildBudget,
   splitExact,
   summariseSpend,
-} from './budget';
+} from './budget.js';
 
 describe('budget templates', () => {
   it.each(Object.entries(BUDGET_TEMPLATES))('%s weights sum to 100', (_type, specs) => {

@@ -1,5 +1,5 @@
-import type { EventType, Milestone, Timeline } from '../types';
-import { addDays, daysBetween } from './dates';
+import type { EventType, Milestone, Timeline } from '../types.js';
+import { addDays, daysBetween } from './dates.js';
 
 interface MilestoneSpec {
   id: string;

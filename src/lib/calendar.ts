@@ -1,5 +1,5 @@
-import type { EventDetails, Milestone } from '../types';
-import { addDays } from './dates';
+import type { EventDetails, Milestone } from '../types.js';
+import { addDays } from './dates.js';
 
 /** Escapes text per RFC 5545 §3.3.11. */
 export function escapeIcs(text: string): string {

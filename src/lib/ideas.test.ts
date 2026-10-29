@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures';
-import { buildAskPrompt, buildIdeasPrompt, fallbackIdeas, parseIdeas } from './ideas';
+import { birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures.js';
+import { buildAskPrompt, buildIdeasPrompt, fallbackIdeas, parseIdeas } from './ideas.js';
 
 describe('prompts', () => {
   it('passes user input as JSON data, not as instructions', () => {

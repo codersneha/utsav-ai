@@ -1,4 +1,4 @@
-import type { EventDetails } from '../types';
+import type { EventDetails } from '../types.js';
 
 export const TODAY = '2026-10-29';
 

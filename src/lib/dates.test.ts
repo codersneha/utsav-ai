@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, daysBetween, formatDate, parseIsoDate, todayIso } from './dates';
+import { addDays, daysBetween, formatDate, parseIsoDate, todayIso } from './dates.js';
 
 describe('dates', () => {
   it('parses valid ISO dates and rejects invalid ones', () => {

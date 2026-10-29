@@ -1,5 +1,5 @@
-import type { EventDetails, Ideas } from '../types';
-import { fallbackIdeas, parseIdeas } from './ideas';
+import type { EventDetails, Ideas } from '../types.js';
+import { fallbackIdeas, parseIdeas } from './ideas.js';
 
 export const CLIENT_TIMEOUT_MS = 25_000;
 

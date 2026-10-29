@@ -1,7 +1,7 @@
-import type { EventDetails, EventPlan } from '../types';
-import { buildBudget } from './budget';
-import { buildChecklist } from './checklist';
-import { buildTimeline } from './timeline';
+import type { EventDetails, EventPlan } from '../types.js';
+import { buildBudget } from './budget.js';
+import { buildChecklist } from './checklist.js';
+import { buildTimeline } from './timeline.js';
 
 /** Assembles the deterministic parts of a plan from validated details. */
 export function buildPlan(details: EventDetails, today: string, now: Date = new Date()): EventPlan {

@@ -1,5 +1,5 @@
-import type { EventDetails, EventType, Ideas, Theme } from '../types';
-import { cleanText } from './validation';
+import type { EventDetails, EventType, Ideas, Theme } from '../types.js';
+import { cleanText } from './validation.js';
 
 const LABELS: Record<EventType, string> = {
   wedding: 'wedding',

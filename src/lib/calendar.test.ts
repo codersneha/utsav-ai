@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { weddingDetails } from '../test/fixtures';
-import { buildIcs, escapeIcs, googleCalendarUrl } from './calendar';
-import { buildTimeline } from './timeline';
+import { weddingDetails } from '../test/fixtures.js';
+import { buildIcs, escapeIcs, googleCalendarUrl } from './calendar.js';
+import { buildTimeline } from './timeline.js';
 
 describe('calendar export', () => {
   it('escapes special characters', () => {

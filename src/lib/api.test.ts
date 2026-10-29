@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { geminiIdeas, weddingDetails } from '../test/fixtures';
-import { askPlanner, fetchIdeas } from './api';
+import { geminiIdeas, weddingDetails } from '../test/fixtures.js';
+import { askPlanner, fetchIdeas } from './api.js';
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });

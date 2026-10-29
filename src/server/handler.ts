@@ -1,15 +1,15 @@
-import { addDays, todayIso } from '../lib/dates';
+import { addDays, todayIso } from '../lib/dates.js';
 import {
   IDEAS_RESPONSE_SCHEMA,
   SYSTEM_INSTRUCTION,
   buildAskPrompt,
   buildIdeasPrompt,
   parseIdeas,
-} from '../lib/ideas';
-import { LIMITS, cleanText, validateEventDetails } from '../lib/validation';
-import type { Ideas } from '../types';
-import { DEFAULT_MODEL, GeminiError, generateText } from './gemini';
-import { LruCache, RateLimiter } from './rateLimit';
+} from '../lib/ideas.js';
+import { LIMITS, cleanText, validateEventDetails } from '../lib/validation.js';
+import type { Ideas } from '../types.js';
+import { DEFAULT_MODEL, GeminiError, generateText } from './gemini.js';
+import { LruCache, RateLimiter } from './rateLimit.js';
 
 export const MAX_BODY_BYTES = 8 * 1024;
 

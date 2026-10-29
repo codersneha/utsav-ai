@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { isBoolean, isRecordOf, loadJson, removeKey, saveJson } from './storage';
+import { isBoolean, isRecordOf, loadJson, removeKey, saveJson } from './storage.js';
 
 describe('storage', () => {
   it('round-trips JSON values', () => {

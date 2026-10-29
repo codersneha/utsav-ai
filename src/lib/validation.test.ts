@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TODAY, weddingDetails } from '../test/fixtures';
-import { cleanText, validateEventDetails } from './validation';
+import { TODAY, weddingDetails } from '../test/fixtures.js';
+import { cleanText, validateEventDetails } from './validation.js';
 
 describe('cleanText', () => {
   it('strips markup characters, control chars and collapses whitespace', () => {

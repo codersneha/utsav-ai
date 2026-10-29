@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { geminiIdeas, geminiResponse, weddingDetails } from '../test/fixtures';
-import type { Ideas } from '../types';
-import { MAX_BODY_BYTES, handleGenerate, type HandlerDeps } from './handler';
-import { LruCache, RateLimiter } from './rateLimit';
+import { geminiIdeas, geminiResponse, weddingDetails } from '../test/fixtures.js';
+import type { Ideas } from '../types.js';
+import { MAX_BODY_BYTES, handleGenerate, type HandlerDeps } from './handler.js';
+import { LruCache, RateLimiter } from './rateLimit.js';
 
 const NOW = () => new Date('2026-10-29T06:00:00Z');
 

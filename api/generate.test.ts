@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { POST } from './generate';
+import { POST } from './generate.js';
 
 describe('Vercel function entry', () => {
   afterEach(() => vi.unstubAllEnvs());

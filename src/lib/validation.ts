@@ -1,5 +1,5 @@
-import { EVENT_TYPES, PRIORITIES, type EventDetails, type EventType, type Priority } from '../types';
-import { daysBetween, parseIsoDate } from './dates';
+import { EVENT_TYPES, PRIORITIES, type EventDetails, type EventType, type Priority } from '../types.js';
+import { daysBetween, parseIsoDate } from './dates.js';
 
 export const LIMITS = {
   titleMax: 80,

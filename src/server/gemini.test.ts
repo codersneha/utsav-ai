@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { geminiResponse } from '../test/fixtures';
-import { GeminiError, generateText } from './gemini';
+import { geminiResponse } from '../test/fixtures.js';
+import { GeminiError, generateText } from './gemini.js';
 
 const base = { apiKey: 'test-key', model: 'gemini-test', systemInstruction: 'sys', prompt: 'hi' };
 

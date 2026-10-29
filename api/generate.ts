@@ -1,4 +1,4 @@
-import { handleGenerate } from '../src/server/handler';
+import { handleGenerate } from '../src/server/handler.js';
 
 /** Vercel Function: POST /api/generate. The Gemini key never reaches the browser. */
 export async function POST(request: Request): Promise<Response> {

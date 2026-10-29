@@ -1,4 +1,4 @@
-import type { BudgetLine, BudgetPlan, EventType, Priority } from '../types';
+import type { BudgetLine, BudgetPlan, EventType, Priority } from '../types.js';
 
 interface CategorySpec {
   id: string;
