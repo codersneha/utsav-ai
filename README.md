@@ -5,7 +5,7 @@
 
 UtsavAI (_utsav_ means "celebration" in Hindi) turns a few details about your event into a complete, editable plan in seconds. It gives you a budget that adds up to the rupee, a timeline that works back from your date, vendor checklists, and ideas personalised by **Google Gemini**. You can also ask the planner follow-up questions.
 
-**Live demo:** `<your-deployed-url>` · **Demo video:** `<your-video-link>`
+**Live demo:** https://utsav-ai-one.vercel.app · **Demo video:** `<your-video-link>`
 
 ---
 
