@@ -1,29 +1,86 @@
 import { describe, expect, it } from 'vitest';
 import { birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures.js';
-import { fallbackIdeas, parseIdeas } from './ideas.js';
+import { menuFor } from './culture/index.js';
+import { fallbackIdeas, mergeIdeas, parseIdeas } from './ideas.js';
 
 describe('parseIdeas', () => {
-  it('parses valid JSON text and tags the source', () => {
-    const ideas = parseIdeas(JSON.stringify(geminiIdeas));
-    expect(ideas?.themes[0].name).toBe('Marigold');
-    expect(ideas?.source).toBe('gemini');
+  it('parses valid JSON text into ceremonies and courses', () => {
+    const ideas = parseIdeas(JSON.stringify(geminiIdeas), weddingDetails);
+    expect(ideas?.ceremonies?.map((c) => c.ceremonyId)).toEqual(['mehendi', 'wedding']);
+    expect(ideas?.ceremonies?.[0].theme).toBe('Marigold');
+    expect(ideas?.menu?.find((m) => m.courseId === 'starters')?.dishes).toEqual([
+      'Moong dal kachori',
+      'Kanji vada',
+    ]);
+  });
+
+  it('drops ceremonies that are not being planned and invented dishes', () => {
+    const ideas = parseIdeas(
+      {
+        ...geminiIdeas,
+        ceremonies: [
+          { id: 'mahira', theme: 'Not chosen', palette: [], decor: ['x'] },
+          { id: 'haldi', theme: 'Sunshine', palette: ['Yellow'], decor: ['Marigold strings'] },
+        ],
+        menu: [{ course: 'starters', dishes: ['Sushi platter', 'Kanji vada'] }],
+      },
+      weddingDetails,
+    );
+    expect(ideas?.ceremonies?.map((c) => c.ceremonyId)).toEqual(['haldi']);
+    const starters = ideas?.menu?.find((m) => m.courseId === 'starters')?.dishes ?? [];
+    expect(starters).not.toContain('Sushi platter');
+    expect(starters).toContain('Kanji vada');
+    // Courses the model skipped are still filled from the knowledge base.
+    expect(ideas?.menu?.map((m) => m.courseId)).toEqual(menuFor(weddingDetails).courses.map((c) => c.id));
   });
 
   it('sanitises and caps untrusted model output', () => {
-    const ideas = parseIdeas({
-      ...geminiIdeas,
-      decor: ['<img src=x onerror=alert(1)>', 5, '', ...Array(10).fill('Lights')],
-      themes: [{ name: 'Ok', description: 'Fine' }, { name: '', description: 'x' }, 'bad'],
+    const ideas = parseIdeas(
+      {
+        ...geminiIdeas,
+        ceremonies: [
+          {
+            id: 'mehendi',
+            theme: '<b>Bold</b>',
+            palette: ['Pink'],
+            decor: ['<img src=x onerror=alert(1)>', 5, '', ...Array(10).fill('Lights')],
+          },
+        ],
+      },
+      weddingDetails,
+    );
+    const decor = ideas?.ceremonies?.[0].decor ?? [];
+    expect(decor.join(' ')).not.toContain('<');
+    expect(decor.length).toBeLessThanOrEqual(4);
+  });
+
+  it('parses only the requested section', () => {
+    const menuOnly = parseIdeas({ menu: geminiIdeas.menu }, weddingDetails, 'menu');
+    expect(Object.keys(menuOnly ?? {})).toEqual(['menu']);
+    const extras = parseIdeas(geminiIdeas, weddingDetails, 'extras');
+    expect(extras).toEqual({
+      summary: geminiIdeas.summary,
+      activities: ['Ghoomar'],
+      budgetTips: ['Weekday date'],
     });
-    expect(ideas?.decor[0]).not.toContain('<');
-    expect(ideas?.decor.length).toBeLessThanOrEqual(6);
-    expect(ideas?.themes).toHaveLength(1);
   });
 
   it('returns null for unusable output', () => {
-    expect(parseIdeas('not json')).toBeNull();
-    expect(parseIdeas(null)).toBeNull();
-    expect(parseIdeas({ summary: 'x', themes: [] })).toBeNull();
+    expect(parseIdeas('not json', weddingDetails)).toBeNull();
+    expect(parseIdeas(null, weddingDetails)).toBeNull();
+    expect(parseIdeas({ ...geminiIdeas, ceremonies: [] }, weddingDetails)).toBeNull();
+    expect(parseIdeas({ ...geminiIdeas, menu: 'none' }, weddingDetails)).toBeNull();
+    expect(parseIdeas({ summary: 'x', activities: [], budgetTips: [] }, weddingDetails, 'extras')).toBeNull();
+  });
+});
+
+describe('mergeIdeas', () => {
+  it('changes one section and keeps the others', () => {
+    const base = fallbackIdeas(weddingDetails);
+    const merged = mergeIdeas(base, { menu: [{ courseId: 'starters', dishes: ['Kanji vada'] }] });
+    expect(merged.ceremonies).toBe(base.ceremonies);
+    expect(merged.menu).toEqual([{ courseId: 'starters', dishes: ['Kanji vada'] }]);
+    expect(merged.source).toBe('gemini');
   });
 });
 
@@ -36,9 +93,25 @@ describe('fallbackIdeas', () => {
     ]) {
       const ideas = fallbackIdeas(details);
       expect(ideas.source).toBe('fallback');
-      expect(ideas.themes.length).toBeGreaterThan(0);
+      expect(ideas.ceremonies.length).toBeGreaterThan(0);
+      expect(ideas.menu.length).toBeGreaterThan(0);
       expect(ideas.summary).toContain(details.city);
-      expect(parseIdeas(ideas)).not.toBeNull();
+      const raw = {
+        ...ideas,
+        ceremonies: ideas.ceremonies.map((c) => ({ ...c, id: c.ceremonyId })),
+        menu: ideas.menu.map((m) => ({ course: m.courseId, dishes: m.dishes })),
+      };
+      expect(parseIdeas(raw, details)).not.toBeNull();
     }
+  });
+
+  it('plans one décor per wedding function and none for a party', () => {
+    expect(fallbackIdeas(weddingDetails).ceremonies.map((c) => c.ceremonyId)).toEqual([
+      'mehendi',
+      'haldi',
+      'wedding',
+      'reception',
+    ]);
+    expect(fallbackIdeas(birthdayDetails).ceremonies.map((c) => c.ceremonyId)).toEqual(['party']);
   });
 });

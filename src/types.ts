@@ -18,6 +18,10 @@ export type Language = (typeof LANGUAGES)[number];
 export const AGE_GROUPS = ['mixed', 'kids', 'teens', 'adults', 'seniors'] as const;
 export type AgeGroup = (typeof AGE_GROUPS)[number];
 
+import type { TraditionId } from './lib/culture/traditions.js';
+
+export type { TraditionId };
+
 /** Validated user input describing the event to plan. */
 export interface EventDetails {
   eventType: EventType;
@@ -38,6 +42,12 @@ export interface EventDetails {
   colors: string;
   /** Language for AI-written text (ideas, schedule, answers). */
   language: Language;
+  /** Cultural tradition: drives the menu, service style and ceremonies. */
+  tradition: TraditionId;
+  /** Wedding functions being planned (ids from the tradition), e.g. gaye-holud, biye. */
+  ceremonies: string[];
+  /** The venue, if already chosen. */
+  venueName: string;
 }
 
 export interface BudgetLine {
@@ -132,15 +142,41 @@ export interface Theme {
   description: string;
 }
 
+/** Decor ideas for one ceremony (or the party itself). */
+export interface CeremonyIdea {
+  ceremonyId: string;
+  /** A short theme name, e.g. "Shola & Marigold". */
+  theme: string;
+  /** Colour names for this function. */
+  palette: string[];
+  decor: string[];
+}
+
+/** Dishes chosen for one course of the menu (always from the knowledge base). */
+export interface MenuChoice {
+  courseId: string;
+  dishes: string[];
+}
+
 /** Personalised, AI-generated (or fallback) ideas. */
 export interface Ideas {
   summary: string;
-  themes: Theme[];
-  decor: string[];
-  food: string[];
+  ceremonies: CeremonyIdea[];
+  menu: MenuChoice[];
   activities: string[];
   budgetTips: string[];
   source: 'gemini' | 'fallback';
+}
+
+/** Which part of the ideas to regenerate on its own. */
+export type IdeasSection = 'decor' | 'menu' | 'extras';
+
+/** Look extracted from an inspiration photo. */
+export interface Inspiration {
+  theme: string;
+  mood: string;
+  palette: { name: string; hex: string }[];
+  elements: string[];
 }
 
 export interface ScheduleItem {
@@ -186,4 +222,18 @@ export interface ChatTurn {
   proposal?: ChangeProposal;
   /** What the user did with the proposal. */
   proposalState?: 'applied' | 'dismissed';
+}
+
+/** A venue found on the map (OpenStreetMap today; other providers later). */
+export interface Venue {
+  name: string;
+  kind: string;
+  address: string;
+  lat: number;
+  lon: number;
+  /** Distance from the city centre, when searching around a city. */
+  distanceKm?: number;
+  /** Google Maps search link — for photos, reviews and ratings. */
+  mapsUrl: string;
+  osmUrl: string;
 }

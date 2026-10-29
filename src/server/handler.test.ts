@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { geminiIdeas, geminiLogistics, geminiResponse, weddingDetails } from '../test/fixtures.js';
 import type { Ideas } from '../types.js';
-import { MAX_BODY_BYTES, handleGenerate, stripMarkdown, type HandlerDeps } from './handler.js';
+import {
+  MAX_BODY_BYTES,
+  MAX_IMAGE_BODY_BYTES,
+  handleGenerate,
+  stripMarkdown,
+  type HandlerDeps,
+} from './handler.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
 
 const NOW = () => new Date('2026-10-29T06:00:00Z');
@@ -35,9 +41,13 @@ describe('handleGenerate — request guards', () => {
   it('rejects wrong content type, oversized and malformed bodies', async () => {
     expect((await handleGenerate(post('{}', { 'content-type': 'text/plain' }), deps())).status).toBe(415);
     expect(
-      (await handleGenerate(post('{}', { 'content-length': String(MAX_BODY_BYTES + 1) }), deps())).status,
+      (await handleGenerate(post('{}', { 'content-length': String(MAX_IMAGE_BODY_BYTES + 1) }), deps()))
+        .status,
     ).toBe(413);
-    expect((await handleGenerate(post('x'.repeat(MAX_BODY_BYTES + 1)), deps())).status).toBe(413);
+    expect((await handleGenerate(post('x'.repeat(MAX_IMAGE_BODY_BYTES + 1)), deps())).status).toBe(413);
+    // Only photo uploads may exceed the small limit.
+    const big = { mode: 'ideas', details: weddingDetails, padding: 'x'.repeat(MAX_BODY_BYTES) };
+    expect((await handleGenerate(post(big), deps())).status).toBe(413);
     expect((await handleGenerate(post('{not json'), deps())).status).toBe(400);
     expect((await handleGenerate(post('42'), deps())).status).toBe(400);
   });
@@ -88,7 +98,7 @@ describe('handleGenerate — Gemini calls', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect((await res.json()).ideas.themes[0].name).toBe('Marigold');
+    expect((await res.json()).ideas.ceremonies[0].theme).toBe('Marigold');
 
     const again = await handleGenerate(post({ mode: 'ideas', details: weddingDetails }), d);
     expect((await again.json()).cached).toBe(true);
@@ -293,5 +303,87 @@ describe('handleGenerate — extraction and change proposals', () => {
       deps({ fetchImpl }),
     );
     expect(res.status).toBe(502);
+  });
+});
+
+describe('handleGenerate — sections, photos and venues', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('regenerates one section only, with a smaller schema', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      geminiResponse(JSON.stringify({ menu: geminiIdeas.menu })),
+    );
+    const res = await handleGenerate(
+      post({ mode: 'ideas', details: weddingDetails, section: 'menu' }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect(Object.keys((await res.json()).ideas)).toEqual(['menu']);
+    const sent = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
+    expect(Object.keys(sent.generationConfig.responseSchema.properties)).toEqual(['menu']);
+  });
+
+  const JPEG = btoa('\xff\xd8\xff\xe0' + 'x'.repeat(40));
+
+  it('reads a décor photo and validates the colours', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      geminiResponse(
+        JSON.stringify({
+          theme: 'Marigold courtyard',
+          mood: 'Warm and festive',
+          palette: [
+            { name: 'Marigold', hex: '#F2A900' },
+            { name: 'Bad', hex: 'red' },
+          ],
+          elements: ['Marigold strings'],
+        }),
+      ),
+    );
+    const res = await handleGenerate(
+      post({ mode: 'vision', image: JPEG, mimeType: 'image/jpeg' }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).inspiration.palette).toEqual([{ name: 'Marigold', hex: '#f2a900' }]);
+    const parts = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).contents[0].parts;
+    expect(parts.some((p: { inlineData?: unknown }) => p.inlineData)).toBe(true);
+  });
+
+  it('rejects files that are not really images', async () => {
+    const fake = btoa('<script>alert(1)</script>xxxxxxxx');
+    const res = await handleGenerate(post({ mode: 'vision', image: fake, mimeType: 'image/jpeg' }), deps());
+    expect(res.status).toBe(400);
+  });
+
+  it('looks up venues without the AI key and caches them', async () => {
+    const mapFetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify([{ name: 'Rajbari', lat: '22.5', lon: '88.3', osm_type: 'node', osm_id: 7 }]),
+          {
+            status: 200,
+          },
+        ),
+    );
+    const d = deps({ apiKey: undefined, mapFetch: mapFetch as unknown as typeof fetch });
+    const body = { mode: 'venues', action: 'check', name: 'Rajbari', city: 'Kolkata' };
+    const res = await handleGenerate(post(body), d);
+    expect(res.status).toBe(200);
+    expect((await res.json()).venues[0].name).toBe('Rajbari');
+    expect((await (await handleGenerate(post(body), d)).json()).cached).toBe(true);
+    expect(mapFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects bad venue requests and reports unknown cities', async () => {
+    const mapFetch = (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
+    expect(
+      (await handleGenerate(post({ mode: 'venues', action: 'drop', city: 'Kolkata' }), deps())).status,
+    ).toBe(400);
+    const res = await handleGenerate(
+      post({ mode: 'venues', action: 'search', city: 'Atlantis' }),
+      deps({ mapFetch }),
+    );
+    expect(res.status).toBe(404);
   });
 });

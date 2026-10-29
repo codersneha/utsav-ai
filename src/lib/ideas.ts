@@ -1,5 +1,6 @@
-import type { EventDetails, EventType, Ideas, Theme } from '../types.js';
+import type { CeremonyIdea, EventDetails, EventType, Ideas, IdeasSection } from '../types.js';
 import { cleanList, cleanObjects, toObject } from './aiOutput.js';
+import { ceremoniesFor, defaultMenu, traditionOf, validateMenu } from './culture/index.js';
 import { cleanText } from './validation.js';
 
 const LABELS: Record<EventType, string> = {
@@ -8,124 +9,132 @@ const LABELS: Record<EventType, string> = {
   community: 'community event',
 };
 
-/** JSON schema for Gemini structured output (OpenAPI subset). */
-export const IDEAS_RESPONSE_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    summary: { type: 'STRING' },
-    themes: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: { name: { type: 'STRING' }, description: { type: 'STRING' } },
-        required: ['name', 'description'],
-      },
+const CEREMONIES_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      id: { type: 'STRING' },
+      theme: { type: 'STRING' },
+      palette: { type: 'ARRAY', items: { type: 'STRING' } },
+      decor: { type: 'ARRAY', items: { type: 'STRING' } },
     },
-    decor: { type: 'ARRAY', items: { type: 'STRING' } },
-    food: { type: 'ARRAY', items: { type: 'STRING' } },
-    activities: { type: 'ARRAY', items: { type: 'STRING' } },
-    budgetTips: { type: 'ARRAY', items: { type: 'STRING' } },
+    required: ['id', 'theme', 'palette', 'decor'],
   },
-  required: ['summary', 'themes', 'decor', 'food', 'activities', 'budgetTips'],
 } as const;
 
-const ITEM_MAX = 220;
-const LIST_MAX = 6;
+const MENU_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: { course: { type: 'STRING' }, dishes: { type: 'ARRAY', items: { type: 'STRING' } } },
+    required: ['course', 'dishes'],
+  },
+} as const;
 
-const pickTheme = (o: Record<string, unknown>): Theme | null => {
-  const theme = { name: cleanText(o.name, 60), description: cleanText(o.description, ITEM_MAX) };
-  return theme.name && theme.description ? theme : null;
+const LIST = { type: 'ARRAY', items: { type: 'STRING' } } as const;
+
+/** Gemini structured-output schema for each part of the ideas. */
+export const IDEAS_SCHEMAS: Record<IdeasSection | 'all', object> = {
+  all: {
+    type: 'OBJECT',
+    properties: {
+      summary: { type: 'STRING' },
+      ceremonies: CEREMONIES_SCHEMA,
+      menu: MENU_SCHEMA,
+      activities: LIST,
+      budgetTips: LIST,
+    },
+    required: ['summary', 'ceremonies', 'menu', 'activities', 'budgetTips'],
+  },
+  decor: { type: 'OBJECT', properties: { ceremonies: CEREMONIES_SCHEMA }, required: ['ceremonies'] },
+  menu: { type: 'OBJECT', properties: { menu: MENU_SCHEMA }, required: ['menu'] },
+  extras: {
+    type: 'OBJECT',
+    properties: { summary: { type: 'STRING' }, activities: LIST, budgetTips: LIST },
+    required: ['summary', 'activities', 'budgetTips'],
+  },
 };
 
-/**
- * Validates model output. LLM output is untrusted: every field is type-checked,
- * length-capped and stripped of markup. Returns null if it is unusable.
- */
-export function parseIdeas(raw: unknown): Ideas | null {
-  const obj = toObject(raw);
-  if (!obj) return null;
-  const ideas: Ideas = {
-    summary: cleanText(obj.summary, 400),
-    themes: cleanObjects(obj.themes, 4, pickTheme),
-    decor: cleanList(obj.decor, LIST_MAX, ITEM_MAX),
-    food: cleanList(obj.food, LIST_MAX, ITEM_MAX),
-    activities: cleanList(obj.activities, LIST_MAX, ITEM_MAX),
-    budgetTips: cleanList(obj.budgetTips, LIST_MAX, ITEM_MAX),
-    source: 'gemini',
-  };
-  const hasContent = ideas.themes.length > 0 && (ideas.decor.length > 0 || ideas.food.length > 0);
-  return hasContent ? ideas : null;
+const ITEM_MAX = 200;
+
+/** Decor ideas are kept only for ceremonies actually being planned. */
+function parseCeremonies(value: unknown, details: EventDetails): CeremonyIdea[] {
+  const allowed = new Set(ceremoniesFor(details).map((c) => c.id));
+  const seen = new Set<string>();
+  return cleanObjects(value, 8, (o) => {
+    const id = typeof o.id === 'string' ? o.id : '';
+    if (!allowed.has(id) || seen.has(id)) return null;
+    seen.add(id);
+    const idea = {
+      ceremonyId: id,
+      theme: cleanText(o.theme, 60),
+      palette: cleanList(o.palette, 4, 30),
+      decor: cleanList(o.decor, 4, ITEM_MAX),
+    };
+    return idea.theme && idea.decor.length > 0 ? idea : null;
+  });
 }
 
-const FALLBACK: Record<EventType, Omit<Ideas, 'summary' | 'source'>> = {
+function parseMenu(value: unknown, details: EventDetails) {
+  const raw = cleanObjects(value, 20, (o) => ({
+    courseId: typeof o.course === 'string' ? o.course : '',
+    dishes: cleanList(o.dishes, 8, 120),
+  }));
+  return validateMenu(raw, details);
+}
+
+/**
+ * Validates model output against the knowledge base. Ceremony ids must exist,
+ * every dish must be a real dish from the tradition's menu, and all text is
+ * cleaned. Returns the parts requested, or null if they are unusable.
+ */
+export function parseIdeas(
+  raw: unknown,
+  details: EventDetails,
+  section?: IdeasSection,
+): Partial<Ideas> | null {
+  const obj = toObject(raw);
+  if (!obj) return null;
+  const out: Partial<Ideas> = {};
+  if (!section || section === 'decor') {
+    out.ceremonies = parseCeremonies(obj.ceremonies, details);
+    if (out.ceremonies.length === 0) return null;
+  }
+  if (!section || section === 'menu') {
+    if (!Array.isArray(obj.menu)) return null;
+    out.menu = parseMenu(obj.menu, details);
+  }
+  if (!section || section === 'extras') {
+    out.summary = cleanText(obj.summary, 400);
+    out.activities = cleanList(obj.activities, 6, ITEM_MAX);
+    out.budgetTips = cleanList(obj.budgetTips, 6, ITEM_MAX);
+    if (out.activities.length === 0 && out.budgetTips.length === 0) return null;
+  }
+  return out;
+}
+
+/** Combines a section update with the existing ideas (so changing food never touches decor). */
+export function mergeIdeas(base: Ideas, update: Partial<Ideas>): Ideas {
+  return { ...base, ...update, source: 'gemini' };
+}
+
+const EXTRAS: Record<EventType, Pick<Ideas, 'activities' | 'budgetTips'>> = {
   wedding: {
-    themes: [
-      {
-        name: 'Marigold Mela',
-        description:
-          'Bright genda-phool garlands, brass urlis and folk music for a festive, budget-friendly feel.',
-      },
-      {
-        name: 'Pastel Garden',
-        description: 'Soft pinks and greens, fairy lights and potted plants guests can take home.',
-      },
-      {
-        name: 'Royal Heritage',
-        description: 'Jewel tones, block-print fabrics and lanterns inspired by palace courtyards.',
-      },
-    ],
-    decor: [
-      'Reuse mandap flowers for the reception backdrop',
-      'Use diyas and fairy lights instead of large floral walls',
-      'Rent fabric drapes rather than buying',
-      'Add a photo corner with a family-history wall',
-    ],
-    food: [
-      'Live chaat and dosa counters',
-      'One regional speciality from each family',
-      'Clearly labelled Jain and vegan options',
-      'Kulfi cart for dessert',
-    ],
     activities: [
-      'Sangeet with family dance performances',
+      'A family photo corner with old wedding pictures of parents and grandparents',
+      'A short introduction of both families during dinner',
       'Guest wishes recorded on a video booth',
-      'Couple quiz during dinner',
-      'Mehendi with live dholak',
+      'Traditional songs led by the elders at the pre-wedding functions',
     ],
     budgetTips: [
       'Choose an off-season or weekday date',
-      'Cap the guest list early — food scales per head',
-      'Bundle decor and catering with one vendor',
-      'Send digital invitations',
+      'Fix the guest list early — food costs scale per head',
+      'Reuse the main-function flowers for the reception backdrop',
+      'Send digital invitations to most guests',
     ],
   },
   birthday: {
-    themes: [
-      {
-        name: 'Retro Bollywood',
-        description: 'Vintage posters, filmi playlist and a best-dressed-star award.',
-      },
-      {
-        name: 'Picnic in the Park',
-        description: 'Mats, fairy lights and finger food for a relaxed outdoor celebration.',
-      },
-      {
-        name: 'Space Explorers',
-        description: 'Glow-in-the-dark stars, planet balloons and a “mission” treasure hunt.',
-      },
-    ],
-    decor: [
-      'Balloon arch in two theme colours',
-      'DIY photo backdrop with fabric and lights',
-      'Personalised name banner',
-      'Table confetti made from recycled paper',
-    ],
-    food: [
-      'Mini pav bhaji sliders',
-      'Build-your-own sundae bar',
-      'Fruit skewers for a healthy option',
-      'Eggless cake to include everyone',
-    ],
     activities: [
       'Treasure hunt with theme clues',
       'Memory jar where guests write wishes',
@@ -140,26 +149,6 @@ const FALLBACK: Record<EventType, Omit<Ideas, 'summary' | 'source'>> = {
     ],
   },
   community: {
-    themes: [
-      {
-        name: 'Neighbourhood Utsav',
-        description: 'Local food stalls, folk performances and a talent stage for residents.',
-      },
-      { name: 'Green Fair', description: 'Zero-waste stalls, plant swap and upcycling workshops.' },
-      { name: 'Culture Walk', description: 'Stations showcasing different regions’ food, dance and crafts.' },
-    ],
-    decor: [
-      'Bunting made from old sarees and fabric scraps',
-      'Clear wayfinding signs with large text',
-      'Lantern lighting along paths',
-      'A community wish tree',
-    ],
-    food: [
-      'Stalls run by local home cooks',
-      'Water refill stations instead of bottles',
-      'Millet-based snacks',
-      'Steel plates on rent to cut waste',
-    ],
     activities: [
       'Kids’ drawing competition',
       'Open-mic talent stage',
@@ -175,13 +164,22 @@ const FALLBACK: Record<EventType, Omit<Ideas, 'summary' | 'source'>> = {
   },
 };
 
-/** Deterministic ideas used when Gemini is unavailable, so the app always works. */
+/** Deterministic ideas straight from the knowledge base, used when Gemini is unavailable. */
 export function fallbackIdeas(details: EventDetails): Ideas {
-  const base = FALLBACK[details.eventType];
   const who = details.title || `your ${LABELS[details.eventType]}`;
+  const tradition = traditionOf(details);
+  const ceremonies = ceremoniesFor(details).map((c) => ({
+    ceremonyId: c.id,
+    theme: c.name,
+    palette: c.palette.map((p) => p.name),
+    decor: c.decor,
+  }));
+  const style = details.eventType === 'wedding' ? `${tradition.label} ` : '';
   return {
-    ...base,
-    summary: `Here are ideas for ${who} in ${details.city} for ${details.guests} guests. Mix and match the themes and add your own personal touches.`,
+    summary: `A ${style}plan for ${who} in ${details.city} for ${details.guests} guests, built from traditional décor and menus. Change any part to make it yours.`,
+    ceremonies,
+    menu: defaultMenu(details),
+    ...EXTRAS[details.eventType],
     source: 'fallback',
   };
 }

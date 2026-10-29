@@ -13,6 +13,7 @@ import {
   type Priority,
   type VenueType,
 } from '../types.js';
+import { TRADITIONS, TRADITION_DATA, type TraditionId } from './culture/traditions.js';
 import { daysBetween, parseIsoDate } from './dates.js';
 
 export const LIMITS = {
@@ -22,6 +23,7 @@ export const LIMITS = {
   colorsMax: 60,
   questionMax: 300,
   refinementMax: 200,
+  venueMax: 100,
   describeMin: 10,
   describeMax: 600,
   guestsMin: 1,
@@ -58,11 +60,20 @@ export const isPriority = (v: unknown): v is Priority => PRIORITIES.includes(v a
 export const isDiet = (v: unknown): v is Diet => DIETS.includes(v as Diet);
 export const isVenueType = (v: unknown): v is VenueType => VENUE_TYPES.includes(v as VenueType);
 export const isAgeGroup = (v: unknown): v is AgeGroup => AGE_GROUPS.includes(v as AgeGroup);
+export const isTradition = (v: unknown): v is TraditionId => TRADITIONS.includes(v as TraditionId);
 export const isLanguage = (v: unknown): v is Language => LANGUAGES.includes(v as Language);
 
 /** Keeps only allowed values from an untrusted array, without duplicates. */
 export function pickAllowed<T>(value: unknown, isAllowed: (v: unknown) => v is T, max: number): T[] {
   return Array.isArray(value) ? [...new Set(value.filter(isAllowed))].slice(0, max) : [];
+}
+
+/** Keeps ceremony ids that exist for the chosen tradition (weddings only). */
+function validCeremonies(raw: Record<string, unknown>, eventType: EventType): string[] {
+  if (eventType !== 'wedding' || !Array.isArray(raw.ceremonies)) return [];
+  const tradition = isTradition(raw.tradition) ? raw.tradition : 'modern';
+  const known = new Set(TRADITION_DATA[tradition].ceremonies.map((c) => c.id));
+  return [...new Set(raw.ceremonies.filter((c): c is string => typeof c === 'string' && known.has(c)))];
 }
 
 /**
@@ -119,6 +130,9 @@ export function validateEventDetails(input: unknown, today: string): ValidationR
       ageGroup: isAgeGroup(raw.ageGroup) ? raw.ageGroup : 'mixed',
       colors: cleanText(raw.colors, LIMITS.colorsMax),
       language: isLanguage(raw.language) ? raw.language : 'en',
+      tradition: isTradition(raw.tradition) ? raw.tradition : 'modern',
+      ceremonies: validCeremonies(raw, eventType as EventType),
+      venueName: cleanText(raw.venueName, LIMITS.venueMax),
     },
   };
 }

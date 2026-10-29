@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { checklistProgress, mapsSearchUrl, summariseQuotes } from '../lib/checklist';
 import { formatInr } from '../lib/plan';
+import { VenuePanel } from './VenuePanel';
 import {
   VENDOR_STATUSES,
   type BudgetPlan,
@@ -21,6 +22,8 @@ const STATUS_LABELS: Record<VendorStatus, string> = {
 interface Props {
   groups: VendorGroup[];
   city: string;
+  venueName: string;
+  onChooseVenue: (name: string) => void;
   budget: BudgetPlan;
   done: Record<string, boolean>;
   onToggle: (id: string) => void;
@@ -49,6 +52,7 @@ export function ChecklistPanel(props: Props) {
         the vendor. Vendor names, contacts and quotes are only what you enter; UtsavAI never lists businesses
         or claims availability.
       </p>
+      <VenuePanel city={props.city} venueName={props.venueName} onChoose={props.onChooseVenue} />
       <div className="vendor-grid">
         {props.groups.map((group) => (
           <VendorCard key={group.id} group={group} {...props} />

@@ -29,6 +29,9 @@ const birthday: EventDetails = {
   ageGroup: 'kids',
   colors: '',
   language: 'en',
+  tradition: 'modern',
+  ceremonies: [],
+  venueName: '',
 };
 
 /** Renders the app with a saved plan and a working (mocked) API. */

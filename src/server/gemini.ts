@@ -16,6 +16,8 @@ export interface GeminiRequest {
   prompt: string;
   /** When set, Gemini returns JSON matching this schema. */
   responseSchema?: unknown;
+  /** Optional photo to look at (base64, already validated). */
+  image?: { data: string; mimeType: string };
   temperature?: number;
   maxOutputTokens?: number;
 }
@@ -93,7 +95,14 @@ async function attemptGenerate(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const body = {
     systemInstruction: { parts: [{ text: req.systemInstruction }] },
-    contents: [{ role: 'user', parts: [{ text: req.prompt }] }],
+    contents: [
+      {
+        role: 'user',
+        parts: req.image
+          ? [{ inlineData: { mimeType: req.image.mimeType, data: req.image.data } }, { text: req.prompt }]
+          : [{ text: req.prompt }],
+      },
+    ],
     generationConfig: {
       temperature: req.temperature ?? 0.8,
       maxOutputTokens: req.maxOutputTokens ?? 2048,

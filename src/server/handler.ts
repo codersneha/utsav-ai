@@ -2,12 +2,16 @@ import { cleanList, cleanObjects, toObject } from '../lib/aiOutput.js';
 import {
   ASK_RESPONSE_SCHEMA,
   EXTRACT_RESPONSE_SCHEMA,
+  VISION_PROMPT,
+  VISION_RESPONSE_SCHEMA,
+  isValidImage,
   parseExtracted,
+  parseInspiration,
   parseProposal,
 } from '../lib/assistant.js';
 import { buildBudget } from '../lib/budget.js';
 import { addDays, todayIso } from '../lib/dates.js';
-import { IDEAS_RESPONSE_SCHEMA, parseIdeas } from '../lib/ideas.js';
+import { IDEAS_SCHEMAS, parseIdeas } from '../lib/ideas.js';
 import { LOGISTICS_RESPONSE_SCHEMA, parseLogistics } from '../lib/logistics.js';
 import {
   SYSTEM_INSTRUCTION,
@@ -18,12 +22,16 @@ import {
   type Refinement,
 } from '../lib/prompts.js';
 import { LIMITS, cleanText, validateEventDetails } from '../lib/validation.js';
-import type { ChatTurn, EventDetails } from '../types.js';
+import type { ChatTurn, EventDetails, IdeasSection } from '../types.js';
 import { DEFAULT_MODEL, GeminiError, generateText, type GeminiRequest } from './gemini.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
+import { VenueLookupError, checkVenue, findVenues } from './venues.js';
 
 export const MAX_BODY_BYTES = 16 * 1024;
+/** Photo uploads are resized in the browser to ~200 KB; this leaves generous headroom. */
+export const MAX_IMAGE_BODY_BYTES = 2_000_000;
 const MAX_HISTORY = 4;
+const SECTIONS: IdeasSection[] = ['decor', 'menu', 'extras'];
 
 /** Removes Markdown emphasis and heading marks the UI would show literally. */
 export function stripMarkdown(text: string): string {
@@ -32,6 +40,8 @@ export function stripMarkdown(text: string): string {
 
 export interface HandlerDeps {
   apiKey: string | undefined;
+  /** Used for map (venue) lookups; defaults to fetchImpl. */
+  mapFetch?: typeof fetch;
   model?: string;
   fetchImpl?: typeof fetch;
   limiter?: RateLimiter;
@@ -61,8 +71,10 @@ function clientId(request: Request): string {
 
 /** Validated, mode-specific request — everything the model sees has been cleaned. */
 type Job =
+  | { mode: 'venues' }
   | { mode: 'extract'; description: string; today: string }
-  | { mode: 'ideas'; details: EventDetails; refinement?: Refinement }
+  | { mode: 'vision'; image: { data: string; mimeType: string } }
+  | { mode: 'ideas'; details: EventDetails; refinement?: Refinement; section?: IdeasSection }
   | { mode: 'logistics'; details: EventDetails }
   | { mode: 'ask'; details: EventDetails; question: string; history: ChatTurn[]; today: string };
 
@@ -73,6 +85,12 @@ const pickTurn = (o: Record<string, unknown>): ChatTurn | null => {
 
 /** Turns the untrusted payload into a Job, or an error message for a 400. */
 function parseJob(payload: Record<string, unknown>, today: string): Job | { error: string; fields?: object } {
+  if (payload.mode === 'venues') return { mode: 'venues' };
+  if (payload.mode === 'vision') {
+    if (!isValidImage(payload.image, payload.mimeType, MAX_IMAGE_BODY_BYTES))
+      return { error: 'Invalid image' };
+    return { mode: 'vision', image: { data: payload.image, mimeType: payload.mimeType as string } };
+  }
   if (payload.mode === 'extract') {
     const description = cleanText(payload.description, LIMITS.describeMax);
     if (description.length < LIMITS.describeMin) return { error: 'Description is too short' };
@@ -84,13 +102,16 @@ function parseJob(payload: Record<string, unknown>, today: string): Job | { erro
 
   switch (payload.mode) {
     case 'ideas': {
+      const section = SECTIONS.find((x) => x === payload.section);
+      if (payload.section !== undefined && !section) return { error: 'Unknown section' };
       const request = cleanText(payload.refinement, LIMITS.refinementMax);
-      if (!request) return { mode: 'ideas', details };
+      if (!request) return { mode: 'ideas', details, section };
       if (request.length < 3) return { error: 'Refinement is too short' };
       return {
         mode: 'ideas',
         details,
-        refinement: { request, previousThemes: cleanList(payload.previousThemes, 4, 60) },
+        section,
+        refinement: { request, previousThemes: cleanList(payload.previousThemes, 8, 60) },
       };
     }
     case 'logistics':
@@ -114,10 +135,16 @@ function parseJob(payload: Record<string, unknown>, today: string): Job | { erro
 /** Runs a job against Gemini and returns the response body, or null if the output was unusable. */
 async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?: typeof fetch) {
   switch (job.mode) {
+    case 'venues':
+      return null;
     case 'ideas': {
-      const prompt = buildIdeasPrompt(job.details, job.refinement);
-      const text = await generateText({ ...base, prompt, responseSchema: IDEAS_RESPONSE_SCHEMA }, fetchImpl);
-      const ideas = parseIdeas(text);
+      const prompt = buildIdeasPrompt(job.details, job.refinement, job.section);
+      const schema = IDEAS_SCHEMAS[job.section ?? 'all'];
+      const text = await generateText(
+        { ...base, prompt, responseSchema: schema, maxOutputTokens: 3072 },
+        fetchImpl,
+      );
+      const ideas = parseIdeas(text, job.details, job.section);
       return ideas ? { ideas } : null;
     }
     case 'logistics': {
@@ -143,6 +170,20 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
       const proposal = parseProposal(obj?.proposal, details, job.today);
       return proposal ? { answer, proposal } : { answer };
     }
+    case 'vision': {
+      const text = await generateText(
+        {
+          ...base,
+          prompt: VISION_PROMPT,
+          image: job.image,
+          responseSchema: VISION_RESPONSE_SCHEMA,
+          temperature: 0.3,
+        },
+        fetchImpl,
+      );
+      const inspiration = parseInspiration(text);
+      return inspiration ? { inspiration } : null;
+    }
     case 'extract': {
       const prompt = buildExtractPrompt(job.description, job.today);
       const text = await generateText(
@@ -152,6 +193,38 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
       const extracted = parseExtracted(text, job.today);
       return extracted ? { extracted } : null;
     }
+  }
+}
+
+/** Venue check / search via the map provider (no AI key needed). Results are cached for a day. */
+async function handleVenues(
+  payload: Record<string, unknown>,
+  deps: HandlerDeps,
+  cache: LruCache<unknown>,
+): Promise<Response> {
+  const city = cleanText(payload.city, LIMITS.cityMax);
+  const name = cleanText(payload.name, LIMITS.venueMax);
+  const action = payload.action === 'check' ? 'check' : payload.action === 'search' ? 'search' : null;
+  if (!action || city.length < 2 || (action === 'check' && name.length < 2)) {
+    return json(400, { error: 'Invalid venue request' });
+  }
+  const key = `venues:${action}:${city.toLowerCase()}:${name.toLowerCase()}`;
+  const cached = cache.get(key);
+  if (cached) return json(200, { venues: cached, cached: true });
+  const fetchImpl = deps.mapFetch ?? deps.fetchImpl;
+  try {
+    const venues =
+      action === 'check' ? await checkVenue(name, city, fetchImpl) : await findVenues(city, fetchImpl);
+    cache.set(key, venues);
+    return json(200, { venues });
+  } catch (err) {
+    console.error(
+      `[generate] venues ${action} failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+    );
+    const notFound = err instanceof VenueLookupError && err.message === 'City not found';
+    return json(notFound ? 404 : 502, {
+      error: notFound ? 'City not found on the map' : 'Map service unavailable',
+    });
   }
 }
 
@@ -165,10 +238,10 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
     return json(415, { error: 'Expected application/json' });
   }
   const declared = Number(request.headers.get('content-length') ?? 0);
-  if (declared > MAX_BODY_BYTES) return json(413, { error: 'Request too large' });
+  if (declared > MAX_IMAGE_BODY_BYTES) return json(413, { error: 'Request too large' });
 
   const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) return json(413, { error: 'Request too large' });
+  if (raw.length > MAX_IMAGE_BODY_BYTES) return json(413, { error: 'Request too large' });
 
   let payload: Record<string, unknown>;
   try {
@@ -178,6 +251,9 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
   } catch {
     return json(400, { error: 'Invalid JSON' });
   }
+  // Only photo uploads may be large; every other request stays small.
+  if (payload.mode !== 'vision' && raw.length > MAX_BODY_BYTES)
+    return json(413, { error: 'Request too large' });
 
   // Allow one day of slack so users in any timezone can plan for "today".
   const today = addDays(todayIso(deps.now?.() ?? new Date()), -1);
@@ -189,11 +265,13 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
     return json(429, { error: 'Too many requests' }, { 'Retry-After': String(retryAfter) });
   }
 
+  const cache = deps.cache ?? defaultCache;
+  if (payload.mode === 'venues') return handleVenues(payload, deps, cache);
+
   if (!deps.apiKey) return json(503, { error: 'AI is not configured' });
 
-  // Ideas, logistics and extraction are deterministic enough to cache; conversations are not.
-  const cache = deps.cache ?? defaultCache;
-  const cacheKey = job.mode === 'ask' ? '' : JSON.stringify(job);
+  // Ideas, logistics and extraction are deterministic enough to cache; chats and photos are not.
+  const cacheKey = job.mode === 'ask' || job.mode === 'vision' ? '' : JSON.stringify(job);
   const cached = cacheKey ? cache.get(cacheKey) : undefined;
   if (cached) return json(200, { ...(cached as object), cached: true });
 

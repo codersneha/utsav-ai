@@ -98,11 +98,15 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
       icon: icon(Lightbulb),
       content: (
         <IdeasPanel
+          details={details}
           ideas={planner.ideas.value}
           loading={planner.ideas.loading}
+          busySection={planner.ideas.busySection}
           notice={planner.ideas.notice}
           onRegenerate={planner.ideas.regenerate}
           onRefine={planner.ideas.refine}
+          onRefreshSection={planner.ideas.refreshSection}
+          onUseInspiration={planner.applyLook}
         />
       ),
     },
@@ -150,6 +154,8 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
         <ChecklistPanel
           groups={plan.checklist}
           city={details.city}
+          venueName={details.venueName}
+          onChooseVenue={(name) => void planner.chooseVenue(name)}
           budget={plan.budget}
           done={planner.checklist.done}
           onToggle={planner.checklist.toggle}

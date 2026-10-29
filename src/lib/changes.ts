@@ -27,6 +27,9 @@ const AI_FIELDS: (keyof EventDetails)[] = [
   'diets',
   'ageGroup',
   'colors',
+  'language',
+  'tradition',
+  'ceremonies',
 ];
 
 /**
@@ -71,6 +74,9 @@ export function describeChanges(before: EventPlan, after: EventPlan, today: stri
   }
 
   if (a.city !== b.city) lines.push(`City changed to ${b.city}: vendor search links were updated.`);
+  if (a.venueName !== b.venueName) {
+    lines.push(b.venueName ? `Venue set to ${b.venueName}.` : 'Venue cleared.');
+  }
 
   const refreshAi = AI_FIELDS.some((f) => JSON.stringify(a[f]) !== JSON.stringify(b[f]));
   if (lines.length === 0) lines.push(refreshAi ? 'Preferences updated.' : 'No changes to the plan.');

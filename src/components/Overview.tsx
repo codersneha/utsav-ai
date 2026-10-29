@@ -197,10 +197,10 @@ export function Overview({ plan, today, ideas, timelineDone, checklistDone, vend
             </span>
             Your theme
           </h4>
-          {ideas?.themes[0] ? (
+          {ideas?.ceremonies[0] ? (
             <>
-              <h4>{ideas.themes[0].name}</h4>
-              <p>{ideas.themes[0].description}</p>
+              <h4>{ideas.ceremonies[0].theme}</h4>
+              <p>{ideas.ceremonies[0].decor.slice(0, 2).join(' · ')}</p>
             </>
           ) : (
             <p className="muted">Gemini is preparing theme ideas for you…</p>

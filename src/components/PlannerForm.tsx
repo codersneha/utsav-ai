@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, Cake, Heart, PartyPopper, Sparkles } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { daysBetween, formatDate, todayIso } from '../lib/dates';
+import { TRADITIONS, TRADITION_DATA, type TraditionId } from '../lib/culture';
 import { formatInr } from '../lib/plan';
 import { LIMITS, validateEventDetails, type FieldErrors } from '../lib/validation';
 import {
@@ -106,6 +107,13 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
   const [diets, setDiets] = useState<Diet[]>(initial?.diets ?? []);
   const [colors, setColors] = useState(initial?.colors ?? '');
   const [language, setLanguage] = useState<Language>(initial?.language ?? 'en');
+  const [tradition, setTradition] = useState<TraditionId>(initial?.tradition ?? 'modern');
+  const [ceremonies, setCeremonies] = useState<string[]>(
+    initial?.ceremonies?.length
+      ? initial.ceremonies
+      : TRADITION_DATA[initial?.tradition ?? 'modern'].defaultCeremonies,
+  );
+  const [venueName, setVenueName] = useState(initial?.venueName ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
   const summaryRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -124,7 +132,17 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
     diets,
     colors,
     language,
+    tradition,
+    ceremonies,
+    venueName,
   };
+
+  const chooseTradition = (t: TraditionId) => {
+    setTradition(t);
+    setCeremonies(TRADITION_DATA[t].defaultCeremonies);
+  };
+  const toggleCeremony = (id: string) =>
+    setCeremonies((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const togglePriority = (p: Priority) =>
     setPriorities((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p].slice(-2)));
@@ -258,6 +276,43 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
               })}
               {fieldError('eventType')}
             </fieldset>
+            <div className="field">
+              <label htmlFor="tradition">Tradition</label>
+              <select
+                id="tradition"
+                value={tradition}
+                aria-describedby="tradition-hint"
+                onChange={(e) => chooseTradition(e.target.value as TraditionId)}
+              >
+                {TRADITIONS.map((t) => (
+                  <option key={t} value={t}>
+                    {TRADITION_DATA[t].label}
+                  </option>
+                ))}
+              </select>
+              <p id="tradition-hint" className="hint">
+                Shapes the ceremonies, the menu and how food is served (for example, a Bengali biye dinner is
+                served seated, never as a buffet).
+              </p>
+            </div>
+            {eventType === 'wedding' && (
+              <fieldset>
+                <legend>Which functions are you planning?</legend>
+                <div className="chips">
+                  {TRADITION_DATA[tradition].ceremonies.map((c) => (
+                    <label key={c.id} className={`chip ${ceremonies.includes(c.id) ? 'selected' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={ceremonies.includes(c.id)}
+                        onChange={() => toggleCeremony(c.id)}
+                      />
+                      {c.name}
+                    </label>
+                  ))}
+                </div>
+                <p className="hint">Planning only the reception? Untick the rest.</p>
+              </fieldset>
+            )}
             <div className="grid-2">
               <div className="field">
                 <label htmlFor="title">Event name</label>
@@ -416,6 +471,16 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                 </select>
               </div>
               <div className="field">
+                <label htmlFor="venueName">Venue name, if booked</label>
+                <input
+                  id="venueName"
+                  value={venueName}
+                  maxLength={LIMITS.venueMax}
+                  placeholder="We can check it on the map"
+                  onChange={(e) => setVenueName(e.target.value)}
+                />
+              </div>
+              <div className="field">
                 <label htmlFor="colors">Colour palette</label>
                 <input
                   id="colors"
@@ -507,6 +572,10 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
             <dd>
               {Number(guests) > 0 && Number(budget) > 0 ? formatInr(Number(budget) / Number(guests)) : '—'}
             </dd>
+          </div>
+          <div>
+            <dt>Tradition</dt>
+            <dd>{TRADITION_DATA[tradition].label}</dd>
           </div>
           <div>
             <dt>Diet</dt>

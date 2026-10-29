@@ -19,7 +19,7 @@ const jsonResponse = (body: unknown, status = 200) =>
 const future = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
 async function fillForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByLabelText(/Wedding/));
+  await user.click(screen.getByRole('radio', { name: /^Wedding/ }));
   await user.type(screen.getByLabelText('Event name'), 'Priya & Arjun');
   await user.type(screen.getByLabelText(/Event date/), future(200));
   await user.type(screen.getByLabelText(/City or town/), 'Jaipur');
@@ -98,8 +98,9 @@ describe('App end-to-end flow', () => {
     await screen.findByRole('heading', { name: 'Priya & Arjun' });
     await user.click(screen.getByRole('tab', { name: 'Ideas' }));
     expect(await screen.findByText(/not configured on this deployment/)).toBeInTheDocument();
-    expect(screen.getByText('Curated ideas')).toBeInTheDocument();
-    expect(screen.getByText('Marigold Mela')).toBeInTheDocument();
+    expect(screen.getByText('Curated ideas from our tradition guide')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ceremonies & décor' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'The menu' })).toBeInTheDocument();
   });
 
   it('restores a saved plan, supports editing, regenerating and starting over', async () => {
@@ -123,7 +124,7 @@ describe('App end-to-end flow', () => {
     expect(await screen.findByText('Marigold')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Ideas' }));
     await user.click(await screen.findByRole('button', { name: 'Generate new ideas' }));
-    expect(await screen.findByText('Marigold')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Marigold' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Change details' }));
     expect(screen.getByLabelText(/City or town/)).toHaveValue('Indore');
@@ -169,7 +170,7 @@ describe('landing shortcuts', () => {
     );
     await user.click(screen.getByRole('button', { name: /Fill the form with AI/ }));
     expect(await screen.findByText(/AI filled 4 details from your description/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Wedding/)).toBeChecked();
+    expect(screen.getByRole('radio', { name: /^Wedding/ })).toBeChecked();
     expect(screen.getByLabelText(/City or town/)).toHaveValue('Lucknow');
   });
 

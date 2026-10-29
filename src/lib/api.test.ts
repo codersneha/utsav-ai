@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { apiLogistics, birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures.js';
+import { apiIdeas, apiLogistics, birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures.js';
 import { askPlanner, extractDetails, fetchIdeas, fetchLogistics } from './api.js';
 
 const jsonResponse = (body: unknown, status = 200) =>
@@ -7,10 +7,25 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 describe('fetchIdeas', () => {
   it('returns Gemini ideas on success', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ideas: geminiIdeas }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ideas: apiIdeas(weddingDetails) }));
     const result = await fetchIdeas(weddingDetails);
     expect(result.value.source).toBe('gemini');
+    expect(result.value.ceremonies?.[0].theme).toBe('Marigold');
     expect(result.notice).toBeUndefined();
+  });
+
+  it('requests one section and returns nothing else when it fails', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ ideas: apiIdeas(weddingDetails, 'menu') }));
+    const result = await fetchIdeas(weddingDetails, undefined, { section: 'menu' });
+    expect(JSON.parse(String(spy.mock.calls[0][1]?.body)).section).toBe('menu');
+    expect(Object.keys(result.value)).toEqual(['menu']);
+
+    spy.mockResolvedValueOnce(jsonResponse({ error: 'x' }, 500));
+    const failed = await fetchIdeas(weddingDetails, undefined, { section: 'decor' });
+    expect(failed.value).toEqual({});
+    expect(failed.notice).toMatch(/busy/);
   });
 
   it.each([
@@ -79,8 +94,10 @@ describe('request payloads', () => {
   it('sends refinement and the last four chat turns', async () => {
     const spy = vi
       .spyOn(globalThis, 'fetch')
-      .mockImplementation(async () => jsonResponse({ ideas: geminiIdeas, answer: 'ok' }));
-    await fetchIdeas(weddingDetails, undefined, { request: 'cheaper', previousThemes: ['Marigold'] });
+      .mockImplementation(async () => jsonResponse({ ideas: apiIdeas(weddingDetails), answer: 'ok' }));
+    await fetchIdeas(weddingDetails, undefined, {
+      refine: { request: 'cheaper', previousThemes: ['Marigold'] },
+    });
     expect(JSON.parse(String(spy.mock.calls[0][1]?.body))).toMatchObject({
       mode: 'ideas',
       refinement: 'cheaper',
@@ -122,14 +139,15 @@ describe('response contract', () => {
       new Request('http://localhost/api/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: 'ideas', details: birthdayDetails }),
+        body: JSON.stringify({ mode: 'ideas', details: weddingDetails }),
       }),
       { apiKey: 'k', fetchImpl: (async () => geminiResponse(JSON.stringify(geminiIdeas))) as typeof fetch },
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(server);
-    const result = await fetchIdeas(birthdayDetails);
+    const result = await fetchIdeas(weddingDetails);
     expect(result.notice).toBeUndefined();
     expect(result.value.source).toBe('gemini');
+    expect(result.value.ceremonies?.[0].theme).toBe('Marigold');
   });
 });
 

@@ -3,13 +3,21 @@ import { askPlanner, fetchIdeas, fetchLogistics, type RefineOptions } from '../l
 import type { TradeOffAction } from '../lib/budget';
 import { describeChanges, type PlanChange } from '../lib/changes';
 import { todayIso } from '../lib/dates';
-import { isArrayOf, isChatTurn, isCustomTask, isLogistics, isVendorEntry } from '../lib/guards';
-import { parseIdeas } from '../lib/ideas';
+import { isArrayOf, isChatTurn, isCustomTask, isIdeas, isLogistics, isVendorEntry } from '../lib/guards';
+import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
 import { buildPlan } from '../lib/plan';
 import { readSharedPlan } from '../lib/share';
 import { isBoolean, isNumber, isRecordOf } from '../lib/storage';
 import { validateEventDetails } from '../lib/validation';
-import type { ChatTurn, CustomTask, EventDetails, Ideas, Logistics, VendorEntry } from '../types';
+import type {
+  ChatTurn,
+  CustomTask,
+  EventDetails,
+  Ideas,
+  IdeasSection,
+  Logistics,
+  VendorEntry,
+} from '../types';
 import { usePersistentState } from './usePersistentState';
 
 /** Validates stored details relative to their own date (saved plans may be in the past). */
@@ -21,8 +29,14 @@ const storedDetails = (v: unknown) => {
 const isDetails = (v: unknown): v is EventDetails | null => v === null || storedDetails(v) !== null;
 /** Upgrades plans saved by older versions (fills defaults for newer fields). */
 const normalizeDetails = (v: EventDetails | null) => (v === null ? null : storedDetails(v));
-const isStoredIdeas = (v: unknown): v is Ideas | null =>
-  v === null || (parseIdeas(v) !== null && ['gemini', 'fallback'].includes((v as Ideas).source));
+const isStoredIdeas = (v: unknown): v is Ideas | null => v === null || isIdeas(v);
+
+/** A whole-plan ideas request: always resolves to complete ideas. */
+const wholeIdeas = (d: EventDetails, refine?: RefineOptions) => (signal: AbortSignal) =>
+  fetchIdeas(d, signal, { refine }).then((r) => ({
+    value: isIdeas(r.value) ? r.value : fallbackIdeas(d),
+    notice: r.notice,
+  }));
 const isStoredLogistics = (v: unknown): v is Logistics | null => v === null || isLogistics(v);
 
 /** Everything the user can change, captured before an edit so it can be undone. */
@@ -111,6 +125,7 @@ export function usePlanner() {
   const [vendors, setVendors] = usePersistentState<VendorEntry[]>('vendors', [], isArrayOf(isVendorEntry));
   const [chat, setChat] = usePersistentState<ChatTurn[]>('chat', [], isArrayOf(isChatTurn));
   const [asking, setAsking] = useState(false);
+  const [busySection, setBusySection] = useState<IdeasSection | null>(null);
   const [change, setChange] = useState<PlanChange | null>(null);
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [shared, setShared] = useState<EventDetails | null>(() =>
@@ -138,14 +153,14 @@ export function usePlanner() {
     if (!initial.details) return;
     const d = initial.details;
     const timer = setTimeout(() => {
-      if (!initial.ideas) startIdeas((signal) => fetchIdeas(d, signal));
+      if (!initial.ideas) startIdeas(wholeIdeas(d));
       if (!initial.logistics) startLogistics((signal) => fetchLogistics(d, signal));
     }, 0);
     return () => clearTimeout(timer);
   }, [startIdeas, startLogistics]);
 
   const loadAi = (d: EventDetails) => {
-    ideas.start((signal) => fetchIdeas(d, signal));
+    ideas.start(wholeIdeas(d));
     logistics.start((signal) => fetchLogistics(d, signal));
   };
 
@@ -153,7 +168,12 @@ export function usePlanner() {
     details ? { details, overrides, done, spent, vendors, timelineDone } : null;
 
   /** Shows what changed between two versions of the plan and refreshes AI content if needed. */
-  const revise = (next: EventDetails, nextOverrides: Record<string, number>, prefix?: string) => {
+  const revise = (
+    next: EventDetails,
+    nextOverrides: Record<string, number>,
+    prefix?: string,
+    refreshAi: (d: EventDetails) => void = loadAi,
+  ) => {
     if (!plan) return;
     const nextPlan = buildPlan(next, today, {
       overrides: nextOverrides,
@@ -163,7 +183,7 @@ export function usePlanner() {
     const summary = describeChanges(plan, nextPlan, today);
     setChange(prefix ? { ...summary, lines: [prefix, ...summary.lines] } : summary);
     setDetails(next);
-    if (summary.refreshAi) loadAi(next);
+    if (summary.refreshAi) refreshAi(next);
     return summary;
   };
 
@@ -200,6 +220,21 @@ export function usePlanner() {
     revise(last.details, last.overrides, 'Undone — the plan is back to how it was.');
   };
 
+  /** Applies the look read from an inspiration photo: new colours, and fresh décor only. */
+  const applyLook = (look: { colors: string; note: string }) => {
+    const before = snapshot();
+    if (!details || !before) return;
+    const result = validateEventDetails(
+      { ...details, colors: look.colors, preferences: `${details.preferences} ${look.note}`.trim() },
+      details.date < today ? details.date : today,
+    );
+    if (!result.ok) return;
+    setHistory((h) => [...h, before].slice(-10));
+    revise(result.value, overrides, 'New colours from your photo — refreshing the décor only.', (d) =>
+      refreshSection('decor', undefined, d),
+    );
+  };
+
   /** Opens a plan someone shared by link, replacing the current one. */
   const openShared = () => {
     if (!shared) return;
@@ -222,13 +257,31 @@ export function usePlanner() {
   };
 
   const regenerateIdeas = () => {
-    if (details) ideas.start((signal) => fetchIdeas(details, signal));
+    if (details) ideas.start(wholeIdeas(details));
   };
 
+  const previousThemes = () => ideas.value?.ceremonies.map((c) => c.theme) ?? [];
+
+  /** Re-plans the whole set of ideas from the user's feedback. */
   const refineIdeas = (request: string) => {
     if (!details) return;
-    const refine: RefineOptions = { request, previousThemes: ideas.value?.themes.map((t) => t.name) ?? [] };
-    ideas.start((signal) => fetchIdeas(details, signal, refine));
+    ideas.start(wholeIdeas(details, { request, previousThemes: previousThemes() }));
+  };
+
+  /** Regenerates one section (décor, menu or extras) and keeps everything else as it is. */
+  const refreshSection = (section: IdeasSection, request?: string, d: EventDetails | null = details) => {
+    if (!d) return;
+    const base = ideas.value ?? fallbackIdeas(d);
+    const refine = request ? { request, previousThemes: previousThemes() } : undefined;
+    setBusySection(section);
+    ideas.start((signal) =>
+      fetchIdeas(d, signal, { section, refine })
+        .then((r) => ({
+          value: Object.keys(r.value).length > 0 ? mergeIdeas(base, r.value) : base,
+          notice: r.notice,
+        }))
+        .finally(() => setBusySection(null)),
+    );
   };
 
   const ask = async (question: string) => {
@@ -288,7 +341,9 @@ export function usePlanner() {
     canUndo: history.length > 0,
     undo,
     shared: { details: shared, open: openShared, dismiss: dismissShared },
-    ideas: { ...ideas, regenerate: regenerateIdeas, refine: refineIdeas },
+    applyLook,
+    chooseVenue: (venueName: string) => details && submit({ ...details, venueName }),
+    ideas: { ...ideas, regenerate: regenerateIdeas, refine: refineIdeas, refreshSection, busySection },
     logistics,
     budget: {
       overrides,

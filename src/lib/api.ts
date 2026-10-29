@@ -1,6 +1,16 @@
-import type { ChangeProposal, ChatTurn, EventDetails, Ideas, Logistics } from '../types.js';
-import { fallbackIdeas, parseIdeas } from './ideas.js';
-import { isLogistics } from './guards.js';
+import type {
+  ChangeProposal,
+  ChatTurn,
+  EventDetails,
+  Ideas,
+  IdeasSection,
+  Inspiration,
+  Logistics,
+  Venue,
+} from '../types.js';
+import { isArrayOf, isIdeasPart, isInspiration, isLogistics, isVenue } from './guards.js';
+import type { PreparedImage } from './image.js';
+import { fallbackIdeas } from './ideas.js';
 import { fallbackLogistics } from './logistics.js';
 
 export const CLIENT_TIMEOUT_MS = 25_000;
@@ -64,16 +74,35 @@ export interface RefineOptions {
   previousThemes: string[];
 }
 
-/** Personalised ideas; pass `refine` to adapt the previous ideas to feedback. */
+export interface IdeasOptions {
+  refine?: RefineOptions;
+  /** Regenerate only this part (decor, menu or extras), leaving the rest untouched. */
+  section?: IdeasSection;
+}
+
+/**
+ * Personalised ideas. For a whole-plan request a failure falls back to the
+ * knowledge-base plan; for a section request it returns no change (with a notice).
+ */
 export function fetchIdeas(
   details: EventDetails,
   signal?: AbortSignal,
-  refine?: RefineOptions,
-): Promise<AiResult<Ideas>> {
-  const body = refine
-    ? { mode: 'ideas', details, refinement: refine.request, previousThemes: refine.previousThemes }
-    : { mode: 'ideas', details };
-  return requestWithFallback(body, 'ideas', parseIdeas, () => fallbackIdeas(details), signal);
+  options: IdeasOptions = {},
+): Promise<AiResult<Partial<Ideas>>> {
+  const { refine, section } = options;
+  const body = {
+    mode: 'ideas',
+    details,
+    ...(section ? { section } : {}),
+    ...(refine ? { refinement: refine.request, previousThemes: refine.previousThemes } : {}),
+  };
+  // The server has already validated the model output; check the response shape.
+  const parse = (raw: unknown): Partial<Ideas> | null => {
+    if (section) return isIdeasPart(raw, section) ? raw : null;
+    const whole = isIdeasPart(raw, 'decor') && isIdeasPart(raw, 'menu') && isIdeasPart(raw, 'extras');
+    return whole ? { ...raw, source: 'gemini' } : null;
+  };
+  return requestWithFallback(body, 'ideas', parse, () => (section ? {} : fallbackIdeas(details)), signal);
 }
 
 /** Day-of schedule and per-vendor questions/tasks. */
@@ -157,3 +186,64 @@ export async function extractDetails(description: string): Promise<ExtractResult
     return { fields: {}, notice: 'You appear to be offline — please fill in the form below.' };
   }
 }
+
+export interface InspirationResult {
+  inspiration?: Inspiration;
+  error?: string;
+}
+
+/** Reads the décor style (theme, colours, elements) from an inspiration photo. */
+export async function analyzePhoto(image: PreparedImage): Promise<InspirationResult> {
+  try {
+    const res = await postJson({ mode: 'vision', image: image.data, mimeType: image.mimeType });
+    if (!res.ok) {
+      return {
+        error:
+          res.status === 503
+            ? 'AI is not configured here, so photos cannot be read.'
+            : res.status === 413
+              ? 'That photo is too large.'
+              : 'Could not read that photo just now — please try again.',
+      };
+    }
+    const data = (await res.json()) as { inspiration?: unknown };
+    return isInspiration(data.inspiration)
+      ? { inspiration: data.inspiration }
+      : { error: 'Could not read a décor style from that photo.' };
+  } catch {
+    return { error: 'You appear to be offline — please try again.' };
+  }
+}
+
+export interface VenueResult {
+  venues: Venue[];
+  error?: string;
+}
+
+async function venueRequest(body: Record<string, string>): Promise<VenueResult> {
+  try {
+    const res = await postJson({ mode: 'venues', ...body });
+    if (!res.ok) {
+      return {
+        venues: [],
+        error:
+          res.status === 404
+            ? 'We could not find that city on the map — check the spelling.'
+            : res.status === 429
+              ? 'Too many searches at once — please wait a minute.'
+              : 'The map service is busy — please try again shortly.',
+      };
+    }
+    const data = (await res.json()) as { venues?: unknown };
+    // Links are checked so a tampered response cannot point users elsewhere.
+    return { venues: isArrayOf(isVenue)(data.venues) ? data.venues : [] };
+  } catch {
+    return { venues: [], error: 'You appear to be offline — please try again.' };
+  }
+}
+
+/** Looks up a named venue on the map. */
+export const checkVenue = (name: string, city: string) => venueRequest({ action: 'check', name, city });
+
+/** Event venues near a city, nearest first. */
+export const findVenues = (city: string) => venueRequest({ action: 'search', city });
