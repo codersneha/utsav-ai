@@ -3,14 +3,12 @@ import { useState, type FormEvent } from 'react';
 import {
   MENU_TIER_LABELS,
   ceremoniesFor,
-  decorPhoto,
   decorTier,
   findDish,
   menuCost,
   menuFor,
   type Ceremony,
   type DecorTier,
-  type Photo as DecorPhoto,
 } from '../lib/culture';
 import { formatInr } from '../lib/plan';
 import { LIMITS } from '../lib/validation';
@@ -32,28 +30,24 @@ interface Props {
   decor?: number;
 }
 
-/** A credited décor photo from Wikimedia Commons, or the colour palette when no photo fits. */
-function Photo({ photo, alt, palette }: { photo?: DecorPhoto; alt: string; palette: string[] }) {
-  if (!photo) {
-    return (
-      <div
-        className="photo-fallback"
-        style={{ background: `linear-gradient(135deg, ${palette.join(', ')})` }}
-        role="img"
-        aria-label={`Colour palette for ${alt}`}
-      />
-    );
-  }
+const TIER_LABELS: Record<DecorTier, string> = {
+  simple: 'Simple & homely',
+  classic: 'Classic',
+  grand: 'Grand',
+};
+
+/** A designer-style palette strip: one block per colour, named, with its hex code. */
+function PaletteStrip({ colours, label }: { colours: { name: string; hex: string }[]; label: string }) {
   return (
-    <figure className="photo">
-      <img src={photo.src} alt={alt} loading="lazy" decoding="async" />
-      <figcaption>
-        <a href={photo.page} target="_blank" rel="noopener noreferrer">
-          Photo: Wikimedia Commons, {photo.license}
-          <span className="sr-only"> (opens in a new tab)</span>
-        </a>
-      </figcaption>
-    </figure>
+    <ul className="palette-strip" aria-label={`Colour palette for ${label}`}>
+      {colours.map((c) => (
+        <li key={c.hex + c.name}>
+          <span className="palette-chip" style={{ background: c.hex }} aria-hidden="true" />
+          <span className="palette-name">{c.name}</span>
+          <span className="palette-hex">{c.hex}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -108,26 +102,17 @@ function CeremonyCard({
   idea?: Ideas['ceremonies'][number];
   tier: DecorTier;
 }) {
-  const palette = ceremony.palette.map((p) => p.hex);
-  // Show a photo only when it fits the budget level and (for AI ideas) the AI says it matches.
-  const photo = idea?.photoMatches === false ? undefined : decorPhoto(ceremony, tier);
+  // The AI's palette follows the user's colours (or their inspiration photo); fall back to tradition.
+  const colours = idea && idea.palette.length > 0 ? idea.palette : ceremony.palette;
   return (
     <li className="ceremony-card card">
-      <Photo photo={photo} alt={`${ceremony.name} décor`} palette={palette} />
+      <PaletteStrip colours={colours} label={ceremony.name} />
       <div className="ceremony-body">
         <p className="eyebrow">
           {ceremony.name} · {ceremony.when}
         </p>
         <h4>{idea?.theme ?? ceremony.name}</h4>
         <p className="muted small">{ceremony.about}</p>
-        <ul className="swatches" aria-label="Colours">
-          {ceremony.palette.map((s) => (
-            <li key={s.name}>
-              <span className="swatch-dot" style={{ background: s.hex }} aria-hidden="true" />
-              {s.name}
-            </li>
-          ))}
-        </ul>
         <ul className="ticks">
           {(idea?.decor ?? ceremony.decor).map((d) => (
             <li key={d}>
@@ -138,6 +123,7 @@ function CeremonyCard({
         <p className="food-note">
           <Utensils size={16} aria-hidden="true" /> {ceremony.food}
         </p>
+        <p className="tier-note small muted">Décor level for your budget: {TIER_LABELS[tier]}</p>
       </div>
     </li>
   );

@@ -20,7 +20,7 @@ export const LIMITS = {
   titleMax: 80,
   cityMax: 60,
   preferencesMax: 400,
-  colorsMax: 60,
+  colorsMax: 160,
   questionMax: 300,
   refinementMax: 200,
   venueMax: 100,

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -73,11 +73,35 @@ describe('budget: estimates, edits and trade-offs', () => {
     await user.click(screen.getByRole('tab', { name: 'Budget' }));
     const venue = screen.getByLabelText('Planned amount for Venue');
     await user.clear(venue);
-    await user.type(venue, '5000');
-    expect(venue).toHaveAccessibleDescription('Your amount');
+    await user.type(venue, '5000{Enter}');
+    expect(screen.getByLabelText('Planned amount for Venue')).toHaveValue('5000');
+    expect(screen.getByLabelText('Planned amount for Venue')).toHaveAccessibleDescription('Your amount');
+    // The rest of the budget moved to keep the total, and the change is summarised.
+    expect(screen.getByText(/Balanced — everything adds up/)).toBeInTheDocument();
+    expect(screen.getByText(/Venue −₹/)).toBeInTheDocument();
     expect(screen.getByText(/Guest-count impact/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Reset Venue to the estimate' }));
+    await user.click(screen.getByRole('button', { name: 'Reset to suggested split' }));
     expect(screen.getByLabelText('Planned amount for Venue')).toHaveAccessibleDescription('Estimate');
+  });
+
+  it('removes money to unallocated, places it elsewhere, and respects locks', async () => {
+    const { user, container } = await openPlan();
+    await user.click(screen.getByRole('tab', { name: 'Budget' }));
+    const venueBefore = (screen.getByLabelText('Planned amount for Venue') as HTMLInputElement).value;
+    await user.click(screen.getByRole('button', { name: 'Lock Venue' }));
+    expect(screen.getByRole('button', { name: 'Lock Venue' })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Remove the money from Games & entertainment' }));
+    expect(screen.getByText(/is unallocated — place it below/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Planned amount for Games & entertainment')).toHaveValue('0');
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.selectOptions(screen.getByLabelText(/Put the unallocated/), 'decor');
+    await user.click(screen.getByRole('button', { name: 'Allocate' }));
+    expect(screen.getByText(/Balanced — everything adds up/)).toBeInTheDocument();
+    expect(screen.getByText(/Decor & balloons \+₹/)).toBeInTheDocument();
+    // The locked venue never moved.
+    expect(screen.getByLabelText('Planned amount for Venue')).toHaveValue(venueBefore);
   });
 
   it('shifts money to food through overrides when chosen', async () => {
@@ -241,7 +265,8 @@ describe('revising the plan and exporting it', () => {
     const print = vi.spyOn(window, 'print').mockImplementation(() => {});
     const { user } = await openPlan();
 
-    await user.click(screen.getByRole('button', { name: 'Download timeline (.ics)' }));
+    await user.click(screen.getByRole('tab', { name: 'Timeline' }));
+    await user.click(screen.getByRole('button', { name: 'Download reminders (.ics)' }));
     expect(createUrl).toHaveBeenCalledWith(expect.any(Blob));
     expect(click).toHaveBeenCalled();
     expect(revokeUrl).toHaveBeenCalledWith('blob:plan');
@@ -249,7 +274,28 @@ describe('revising the plan and exporting it', () => {
       'href',
       expect.stringContaining('calendar.google.com'),
     );
-    await user.click(screen.getByRole('button', { name: 'Print / save PDF' }));
+    await user.click(screen.getByRole('button', { name: 'Print summary' }));
     expect(print).toHaveBeenCalled();
+
+    // The clean summary exists only while printing.
+    expect(screen.queryByText('UtsavAI · Celebration plan')).not.toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new Event('beforeprint'));
+    });
+    expect(screen.getByText('UtsavAI · Celebration plan')).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new Event('afterprint'));
+    });
+    expect(screen.queryByText('UtsavAI · Celebration plan')).not.toBeInTheDocument();
+  });
+
+  it('shares a link to the plan from the header', async () => {
+    const { user } = await openPlan();
+    // user-event provides a clipboard; watch what is written to it.
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: 'Share link' }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('#plan='));
+    expect(((await screen.findByLabelText(/Link copied/)) as HTMLInputElement).value).toContain('#plan=');
+    expect(screen.getByRole('progressbar', { name: 'Plan readiness' })).toHaveAttribute('aria-valuenow', '0');
   });
 });

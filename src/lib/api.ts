@@ -217,10 +217,12 @@ export async function analyzePhoto(image: PreparedImage): Promise<InspirationRes
 
 export interface VenueResult {
   venues: Venue[];
+  /** The place a search looked around (so a wrong match can be corrected). */
+  area?: string;
   error?: string;
 }
 
-async function venueRequest(body: Record<string, string>): Promise<VenueResult> {
+async function venueRequest(body: Record<string, string | number>): Promise<VenueResult> {
   try {
     const res = await postJson({ mode: 'venues', ...body });
     if (!res.ok) {
@@ -228,23 +230,33 @@ async function venueRequest(body: Record<string, string>): Promise<VenueResult> 
         venues: [],
         error:
           res.status === 404
-            ? 'We could not find that city on the map — check the spelling.'
-            : res.status === 429
-              ? 'Too many searches at once — please wait a minute.'
-              : 'The map service is busy — please try again shortly.',
+            ? 'We could not find that place on the map — try a nearby locality or a PIN code.'
+            : res.status === 422
+              ? 'That doesn’t look like a Google Maps link to a place — open the venue in Google Maps and copy its link.'
+              : res.status === 429
+                ? 'Too many searches at once — please wait a minute.'
+                : 'The map service is busy — please try again shortly.',
       };
     }
-    const data = (await res.json()) as { venues?: unknown };
+    const data = (await res.json()) as { venues?: unknown; area?: { name?: unknown } };
     // Links are checked so a tampered response cannot point users elsewhere.
-    return { venues: isArrayOf(isVenue)(data.venues) ? data.venues : [] };
+    return {
+      venues: isArrayOf(isVenue)(data.venues) ? data.venues : [],
+      ...(typeof data.area?.name === 'string' ? { area: data.area.name } : {}),
+    };
   } catch {
-    return { venues: [], error: 'You appear to be offline — please try again.' };
+    return { venues: [], error: 'You seem to be offline — venue search needs a connection.' };
   }
 }
 
-/** Looks up a named venue on the map. */
+/** Looks up a named venue (typo-tolerant, anywhere in India). */
 export const checkVenue = (name: string, city: string) => venueRequest({ action: 'check', name, city });
 
-/** Venues near a city that best match the kind of place wanted. */
-export const findVenues = (city: string, venueType = 'undecided', preference = '') =>
-  venueRequest({ action: 'search', city, venueType, preference });
+/** Reads a venue's name and location from a Google Maps link. */
+export const venueFromMapsLink = (url: string) => venueRequest({ action: 'link', url });
+
+/** Venues around a place that best match the kind of place wanted. */
+export const findVenues = (
+  city: string,
+  { venueType = 'undecided', preference = '', near = '', radiusKm = 12 } = {},
+) => venueRequest({ action: 'search', city, venueType, preference, near: near || city, radiusKm });

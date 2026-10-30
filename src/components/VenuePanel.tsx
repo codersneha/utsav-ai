@@ -1,6 +1,8 @@
 import { Building2, Check, MapPin, Search } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
-import { checkVenue, findVenues } from '../lib/api';
+import { usePersistentState } from '../hooks/usePersistentState';
+import { checkVenue, findVenues, venueFromMapsLink } from '../lib/api';
+import { isVenue } from '../lib/guards';
 import { LIMITS } from '../lib/validation';
 import type { Venue, VenueType } from '../types';
 
@@ -68,19 +70,28 @@ function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; 
   );
 }
 
-/** Checks the booked venue on the map, or finds the closest matches to what the user wants. */
+const isNullableVenue = (v: unknown): v is Venue | null => v === null || isVenue(v);
+
+/** Checks the booked venue, takes a Google Maps link, or finds the closest matches to what the user wants. */
 export function VenuePanel({ city, venueName, venueType, preference, onChoose }: Props) {
   const [lookup, setLookup] = useState<{ key: string; venues: Venue[]; error?: string } | null>(null);
+  // A venue saved from a Google Maps link (many local venues are not on the open map).
+  const [linked, setLinked] = usePersistentState<Venue | null>('venueLink', null, isNullableVenue);
+  const [link, setLink] = useState('');
+  const [linkError, setLinkError] = useState('');
   const [wish, setWish] = useState(preference);
-  const [results, setResults] = useState<{ venues: Venue[]; wish: string } | null>(null);
+  const [near, setNear] = useState(city);
+  const [radiusKm, setRadiusKm] = useState(12);
+  const [results, setResults] = useState<{ venues: Venue[]; wish: string; area?: string } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
-  // A venue picked from our own search is already on the map — no need to look it up again.
-  const picked = results?.venues.find((v) => v.name === venueName);
+  // Venues we already know (picked from a search or saved from a link) need no lookup.
+  const known =
+    results?.venues.find((v) => v.name === venueName) ?? (linked?.name === venueName ? linked : undefined);
   const key = `${venueName}|${city}`;
 
   useEffect(() => {
-    if (!venueName || picked) return;
+    if (!venueName || known) return;
     let active = true;
     void checkVenue(venueName, city).then((r) => {
       if (active) setLookup({ key: `${venueName}|${city}`, ...r });
@@ -88,10 +99,10 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
     return () => {
       active = false;
     };
-  }, [venueName, city, picked]);
+  }, [venueName, city, known]);
 
-  const check: { venues: Venue[]; error?: string } | null = picked
-    ? { venues: [picked] }
+  const check: { venues: Venue[]; error?: string } | null = known
+    ? { venues: [known] }
     : lookup?.key === key
       ? lookup
       : null;
@@ -101,12 +112,24 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
     setSearching(true);
     setSearchError('');
     const wanted = wish.trim();
-    const r = await findVenues(city, venueType, wanted);
-    setResults({ venues: r.venues, wish: wanted });
+    const r = await findVenues(city, { venueType, preference: wanted, near: near.trim(), radiusKm });
+    setResults({ venues: r.venues, wish: wanted, area: r.area });
     setSearchError(
-      r.error ?? (r.venues.length === 0 ? `No matching places near ${city} on the open map yet.` : ''),
+      r.error ??
+        (r.venues.length === 0 ? `No matching places on the open map around ${r.area ?? near}.` : ''),
     );
     setSearching(false);
+  };
+
+  const saveLink = async (e: FormEvent) => {
+    e.preventDefault();
+    setLinkError('');
+    const r = await venueFromMapsLink(link.trim());
+    const venue = r.venues[0];
+    if (!venue) return setLinkError(r.error ?? 'We couldn’t read that link.');
+    setLinked(venue);
+    setLink('');
+    onChoose(venue.name);
   };
 
   const exact = results?.venues.some((v) => v.match);
@@ -123,26 +146,52 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
       <div aria-live="polite">
         {venueName ? (
           !check ? (
-            <p className="muted">Checking “{venueName}” on the map…</p>
+            <p className="muted">Looking up “{venueName}”…</p>
           ) : check.venues.length > 0 ? (
             <>
-              <p className="notice success">“{venueName}” is on the map.</p>
+              <p className="notice success">
+                “{venueName}” {known === linked && linked ? 'is saved from Google Maps.' : 'is on the map.'}
+              </p>
               <ul className="plain venue-list">
                 <VenueRow venue={check.venues[0]} chosen />
               </ul>
             </>
           ) : (
-            <p className="notice">
-              We couldn’t find “{venueName}” on OpenStreetMap — smaller venues are often missing.{' '}
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${venueName}, ${city}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Search Google Maps<span className="sr-only"> (opens in a new tab)</span>
-              </a>
-              {check.error ? ` (${check.error})` : ''}
-            </p>
+            <div className="notice">
+              <p>
+                “{venueName}” isn’t on the open map yet — that’s common for local banquets.{' '}
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueName)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Find it on Google Maps<span className="sr-only"> (opens in a new tab)</span>
+                </a>
+                , then paste its link here to save its location.
+              </p>
+              <form className="ask-row" onSubmit={(e) => void saveLink(e)}>
+                <label htmlFor="maps-link" className="sr-only">
+                  Google Maps link to {venueName}
+                </label>
+                <input
+                  id="maps-link"
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://maps.app.goo.gl/…"
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  aria-describedby={linkError ? 'maps-link-error' : undefined}
+                />
+                <button type="submit" className="btn" disabled={link.trim().length < 12}>
+                  Save location
+                </button>
+              </form>
+              {linkError && (
+                <p id="maps-link-error" className="field-error" role="alert">
+                  {linkError}
+                </p>
+              )}
+            </div>
           )
         ) : (
           <p className="muted">
@@ -152,33 +201,58 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
       </div>
 
       <form className="venue-search" onSubmit={(e) => void search(e)}>
-        <label htmlFor="venue-wish">What kind of place would you like?</label>
-        <div className="ask-row">
-          <input
-            id="venue-wish"
-            value={wish}
-            maxLength={LIMITS.venueMax}
-            placeholder="e.g. rooftop with dine-in, garden with a banquet hall"
-            onChange={(e) => setWish(e.target.value)}
-          />
-          <button type="submit" className="btn primary" disabled={searching}>
+        <div className="venue-search-grid">
+          <div className="field">
+            <label htmlFor="venue-wish">What kind of place would you like?</label>
+            <input
+              id="venue-wish"
+              value={wish}
+              maxLength={LIMITS.venueMax}
+              placeholder="e.g. rooftop with dine-in, garden with a banquet hall"
+              onChange={(e) => setWish(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="venue-near">Near</label>
+            <input
+              id="venue-near"
+              value={near}
+              maxLength={LIMITS.cityMax}
+              placeholder="Locality, town or PIN code"
+              onChange={(e) => setNear(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="venue-radius">Within</label>
+            <select id="venue-radius" value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))}>
+              <option value={12}>About 12 km</option>
+              <option value={25}>About 25 km</option>
+            </select>
+          </div>
+          <button type="submit" className="btn primary" disabled={searching || near.trim().length < 2}>
             <Search size={16} aria-hidden="true" /> {searching ? 'Searching…' : 'Find places'}
           </button>
         </div>
         <p className="hint">
-          Searching around {city}
-          {TYPE_WORDS[venueType] ? `, focusing on ${TYPE_WORDS[venueType]}` : ''}. Takes a few seconds.
+          {TYPE_WORDS[venueType] ? `Focusing on ${TYPE_WORDS[venueType]}. ` : ''}A locality or PIN code (e.g.
+          700130) gives the most accurate area. Takes a few seconds.
         </p>
       </form>
 
       <div aria-live="polite">
+        {results?.area && (
+          <p className="area-note">
+            Searched around <strong>{results.area}</strong>. Not your area? Change “Near” to your locality or
+            PIN code.
+          </p>
+        )}
         {searchError && <p className="notice">{searchError}</p>}
         {results && results.venues.length > 0 && (
           <>
             <p className="hint">
               {results.wish && !exact
                 ? `Nothing on the open map is described as “${results.wish}” exactly — these are the closest matches. `
-                : `${results.venues.length} places near ${city}, best matches first. `}
+                : `${results.venues.length} places, best matches first. `}
               Open Google Maps for photos, ratings and reviews before you choose.
             </p>
             <ul className="plain venue-list">

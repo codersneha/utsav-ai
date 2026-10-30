@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { VenueLookupError, checkVenue, distanceKm, findVenues, searchesFor } from './venues.js';
+import {
+  VenueLookupError,
+  checkVenue,
+  distanceKm,
+  findVenues,
+  nameSimilarity,
+  resolveMapsLink,
+  searchesFor,
+} from './venues.js';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -160,5 +168,57 @@ describe('searchesFor', () => {
     });
     expect(venues[0].name).toBe('Sky Rooftop Lounge');
     expect(venues[0].match).toMatch(/roof/);
+  });
+});
+
+describe('venue name matching and Google Maps links', () => {
+  it('scores near-identical spellings high and different places low', () => {
+    expect(nameSimilarity('Royal Aura Banket', 'Royal Aura Banquet')).toBeGreaterThan(0.85);
+    expect(nameSimilarity('Shibaloy Garden', 'Shibaloy')).toBeLessThan(0.8);
+  });
+
+  it('finds a misspelt venue anywhere in India when the city search misses', async () => {
+    const answers: unknown[] = [
+      [],
+      [
+        {
+          name: 'Royal Aura Banquet',
+          type: 'events_venue',
+          lat: '22.85',
+          lon: '88.67',
+          osm_type: 'node',
+          osm_id: 9,
+          display_name: 'Royal Aura Banquet, Ashoknagar, India',
+        },
+      ],
+    ];
+    let call = 0;
+    const fetchImpl = (async () => json(answers[call++] ?? [])) as unknown as typeof fetch;
+    const venues = await checkVenue('royal aura banket', 'Habra', fetchImpl, async () => {});
+    expect(venues[0].name).toBe('Royal Aura Banquet');
+    expect(venues[0].address).toBe('Ashoknagar');
+  });
+
+  it('reads the name and exact location from a Google Maps place link', async () => {
+    const venue = await resolveMapsLink(
+      'https://www.google.com/maps/place/Shibaloy+Garden/@22.70,88.45,911m/data=!3m1!4b1!4m6!3m5!8m2!3d22.7038147!4d88.4565584',
+    );
+    expect(venue).toMatchObject({ name: 'Shibaloy Garden', lat: 22.7038147, lon: 88.4565584 });
+    expect(venue?.mapsUrl).toMatch(/^https:\/\/www\.google\.com\/maps\//);
+  });
+
+  it('follows a short link only to Google Maps and rejects other sites', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://www.google.com/maps/place/Rajbari/@22.5,88.3,17z' },
+        }),
+    );
+    const venue = await resolveMapsLink('https://maps.app.goo.gl/abc', fetchImpl as unknown as typeof fetch);
+    expect(venue?.name).toBe('Rajbari');
+    expect(await resolveMapsLink('https://evil.example.com/maps/place/X/@1,2')).toBeNull();
+    expect(await resolveMapsLink('http://www.google.com/maps/place/X/@1,2')).toBeNull();
+    expect(await resolveMapsLink('not a url')).toBeNull();
   });
 });

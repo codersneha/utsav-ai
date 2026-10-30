@@ -1,7 +1,7 @@
 import { TRADITIONS } from './culture/traditions.js';
 import type { BudgetPlan, ChatTurn, EventDetails, EventType, IdeasSection } from '../types.js';
 import { vendorGroupsFor } from './checklist.js';
-import { ceremoniesFor, decorPhoto, decorTier, menuFor, traditionOf } from './culture/index.js';
+import { ceremoniesFor, decorTier, menuFor, traditionOf } from './culture/index.js';
 
 const LABELS: Record<EventType, string> = {
   wedding: 'wedding',
@@ -60,8 +60,7 @@ export function cultureData(details: EventDetails) {
       when: c.when,
       about: c.about,
       traditionalDecor: c.decor,
-      traditionalColours: c.palette.map((p) => p.name),
-      photo: decorPhoto(c, tier)?.shows,
+      traditionalColours: c.palette,
     })),
     foodBudget: {
       perPlateInr: menu.perPlate,
@@ -100,10 +99,11 @@ export interface Refinement {
 
 const SECTION_TASKS: Record<IdeasSection, string[]> = {
   decor: [
-    'ceremonies: for EVERY ceremony id in CULTURE.ceremonies, a short theme name, 3 colour names and 3 specific décor ideas.',
+    'ceremonies: for EVERY ceremony id in CULTURE.ceremonies, a short theme name, a palette of 3 colours (name and #rrggbb hex) and 3 specific décor ideas.',
+    'If EVENT_DATA.colours is given (the user’s colours, or a look taken from their inspiration photo with hex codes), build every palette and décor idea around those colours — use any hex codes given exactly — but vary the accent shade per function so each looks different; otherwise start from the traditional colours.',
+    'Use refined real-world décor shades (e.g. vermilion #c1121f, marigold #f2a900), never pure web colours like #ff0000.',
     'Keep the traditional elements of each function and make every function look different (a haldi is not decorated like the wedding night).',
     'Match the décor to CULTURE.decorBudgetLevel: simple = homely and affordable, classic = elegant, grand = lavish (large floral installations, statement stages).',
-    'photoMatches: true only if the ceremony has a photo description AND it looks like the décor you describe; otherwise false.',
   ],
   menu: [
     'menu: for each course in CULTURE.menuOptions, choose dishes ONLY from its options, copying the names exactly (without the [tags]),',

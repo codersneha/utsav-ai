@@ -10,6 +10,8 @@ import { cleanText } from '../lib/validation.js';
 
 const USER_AGENT = 'UtsavAI/1.0 (event planner; https://github.com/codersneha/utsav-ai)';
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+/** Photon: typo-tolerant search over the same OpenStreetMap data. */
+const PHOTON = 'https://photon.komoot.io/api/';
 const TIMEOUT_MS = 8_000;
 /** Nominatim allows at most one request per second. */
 const SPACING_MS = 1_100;
@@ -46,7 +48,21 @@ interface NominatimHit {
   osm_type?: string;
   osm_id?: number;
   type?: string;
+  /** OSM key, e.g. amenity, tourism, leisure. */
+  category?: string;
 }
+
+/** Parks, nature and land areas are never venues, even when named "… Garden". */
+const NOT_VENUES = new Set([
+  'leisure',
+  'natural',
+  'landuse',
+  'place',
+  'boundary',
+  'highway',
+  'railway',
+  'waterway',
+]);
 
 const isHit = (v: unknown): v is NominatimHit => typeof v === 'object' && v !== null;
 
@@ -82,21 +98,163 @@ function toVenues(data: unknown, city: string, fallbackName = ''): Venue[] {
   });
 }
 
-/** Looks up a named venue in a city. Returns matches (empty if not on the map). */
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const simplify = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]/g, '');
+
+/** Edit distance between two short strings. */
+function levenshtein(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return row[b.length];
+}
+
+/** 1 for the same name, lower for more spelling differences (ignores spaces and punctuation). */
+export function nameSimilarity(a: string, b: string): number {
+  const x = simplify(a);
+  const y = simplify(b);
+  if (!x || !y) return 0;
+  return 1 - levenshtein(x, y) / Math.max(x.length, y.length);
+}
+
+interface PhotonFeature {
+  geometry?: { coordinates?: [number, number] };
+  properties?: Record<string, string | number | undefined>;
+}
+
+/** Typo-tolerant name search across India, biased towards (but not limited to) the event city. */
+async function fuzzyLookup(
+  name: string,
+  city: string,
+  near: { lat: number; lon: number } | null,
+  fetchImpl: typeof fetch,
+): Promise<Venue[]> {
+  const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
+  const data = (await getJson(`${PHOTON}?limit=10${bias}&q=${encodeURIComponent(name)}`, fetchImpl)) as {
+    features?: PhotonFeature[];
+  };
+  return (data.features ?? []).flatMap((f) => {
+    const props = f.properties ?? {};
+    const found = cleanText(props.name, 100);
+    const [lon, lat] = f.geometry?.coordinates ?? [];
+    if (props.countrycode !== 'IN' || !found || !Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    // Only near-identical names count, so a "Shibaloy" temple is not taken for "Shibaloy Garden".
+    if (nameSimilarity(found, name) < 0.8) return [];
+    const address = [props.street, props.district, props.city ?? props.county, props.state]
+      .filter((p) => typeof p === 'string' && p)
+      .join(', ');
+    return [
+      {
+        name: found,
+        kind: kindOf(String(props.osm_value ?? ''), found),
+        address: cleanText(address, 200),
+        lat: Number(lat),
+        lon: Number(lon),
+        mapsUrl: mapsSearch(found, String(props.city ?? city)),
+        osmUrl: `https://www.openstreetmap.org/${props.osm_type === 'W' ? 'way' : props.osm_type === 'R' ? 'relation' : 'node'}/${props.osm_id ?? ''}`,
+        match: nameSimilarity(found, name) < 1 ? 'Closest spelling match' : undefined,
+      },
+    ];
+  });
+}
+
+/**
+ * Looks up a named venue. Tries the name with the event city, then the name
+ * anywhere in India (a good banquet can be far from home), then a
+ * typo-tolerant search. Returns matches, or an empty list if it is not on
+ * the open map.
+ */
 export async function checkVenue(
   name: string,
   city: string,
   fetchImpl: typeof fetch = fetch,
+  pause: (ms: number) => Promise<unknown> = wait,
 ): Promise<Venue[]> {
-  const url = `${NOMINATIM}?format=jsonv2&limit=5&countrycodes=in&q=${encodeURIComponent(`${name}, ${city}`)}`;
-  return toVenues(await getJson(url, fetchImpl), city, name);
+  const search = (q: string) =>
+    getJson(`${NOMINATIM}?format=jsonv2&limit=5&countrycodes=in&q=${encodeURIComponent(q)}`, fetchImpl);
+  const close = (venues: Venue[]) => venues.filter((v) => nameSimilarity(v.name, name) >= 0.6);
+
+  const inCity = close(toVenues(await search(`${name}, ${city}`), city, name));
+  if (inCity.length > 0) return inCity;
+  await pause(SPACING_MS);
+  const anywhere = close(toVenues(await search(name), city));
+  if (anywhere.length > 0) return anywhere;
+  const near = await geocodeCity(city, fetchImpl).catch(() => null);
+  return fuzzyLookup(name, city, near, fetchImpl);
 }
 
-/** Coordinates of a city or town (first match in India). */
-export async function geocodeCity(
-  city: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ lat: number; lon: number }> {
+const MAPS_HOSTS = new Set([
+  'www.google.com',
+  'google.com',
+  'maps.google.com',
+  'www.google.co.in',
+  'google.co.in',
+]);
+const SHORT_HOSTS = new Set(['maps.app.goo.gl', 'goo.gl']);
+
+/** Reads a venue's name and location from a Google Maps link (full or short). */
+export async function resolveMapsLink(link: string, fetchImpl: typeof fetch = fetch): Promise<Venue | null> {
+  let url: URL;
+  try {
+    url = new URL(link.trim());
+  } catch {
+    return null;
+  }
+  // Short links redirect to the full link; only Google's own hosts are ever fetched.
+  for (let hop = 0; hop < 3 && url.protocol === 'https:' && SHORT_HOSTS.has(url.hostname); hop++) {
+    const res = await fetchImpl(url.toString(), {
+      redirect: 'manual',
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const next = res.headers.get('location');
+    if (!next) return null;
+    url = new URL(next, url);
+  }
+  if (url.protocol !== 'https:' || !MAPS_HOSTS.has(url.hostname) || !url.pathname.startsWith('/maps')) {
+    return null;
+  }
+  const placeName = /\/maps\/place\/([^/]+)/.exec(url.pathname)?.[1];
+  const name = cleanText(decodeURIComponent((placeName ?? '').replace(/\+/g, ' ')), 100);
+  const exact = /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/.exec(url.pathname);
+  const view = /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/.exec(url.pathname);
+  const lat = Number(exact?.[1] ?? view?.[1]);
+  const lon = Number(exact?.[2] ?? view?.[2]);
+  if (!name || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    return null;
+  }
+  return {
+    name,
+    kind: 'from Google Maps',
+    address: '',
+    lat,
+    lon,
+    mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${lat},${lon}`)}`,
+    osmUrl: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`,
+  };
+}
+
+export interface Area {
+  /** The place we searched around, so the user can spot a wrong match. */
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+/** Coordinates of a town, locality or PIN code (first match in India). */
+export async function geocodeCity(city: string, fetchImpl: typeof fetch = fetch): Promise<Area> {
   const data = await getJson(
     `${NOMINATIM}?format=jsonv2&limit=1&countrycodes=in&q=${encodeURIComponent(city)}`,
     fetchImpl,
@@ -105,7 +263,16 @@ export async function geocodeCity(
   const lat = Number(hit?.lat);
   const lon = Number(hit?.lon);
   if (!hit || !Number.isFinite(lat) || !Number.isFinite(lon)) throw new VenueLookupError('City not found');
-  return { lat, lon };
+  const name = cleanText(
+    (hit.display_name ?? city)
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p !== 'India')
+      .slice(0, 4)
+      .join(', '),
+    160,
+  );
+  return { name, lat, lon };
 }
 
 const EVENT_NAME = /banquet|marriage|wedding|lawn|bhawan|bhavan|kalyan|mandap|vivah|utsav|hall/i;
@@ -195,9 +362,8 @@ function preferenceWords(preference: string): string[] {
 }
 
 const ENOUGH = 15;
-const BOX_DEGREES = 0.12; // ~13 km either side of the centre
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Degrees of latitude per km (longitude is close enough at Indian latitudes). */
+const KM = 1 / 111;
 
 export interface VenueSearch {
   venueType?: VenueType;
@@ -205,6 +371,10 @@ export interface VenueSearch {
   preference?: string;
   limit?: number;
   pause?: (ms: number) => Promise<unknown>;
+  /** Already-located search centre (skips geocoding). */
+  centre?: Area;
+  /** How far around the centre to look. */
+  radiusKm?: number;
 }
 
 /**
@@ -216,11 +386,18 @@ export interface VenueSearch {
 export async function findVenues(
   city: string,
   fetchImpl: typeof fetch = fetch,
-  { venueType = 'undecided', preference = '', limit = 20, pause = wait }: VenueSearch = {},
+  {
+    venueType = 'undecided',
+    preference = '',
+    limit = 20,
+    pause = wait,
+    centre,
+    radiusKm = 12,
+  }: VenueSearch = {},
 ): Promise<Venue[]> {
-  const centre = await geocodeCity(city, fetchImpl);
-  const { lat, lon } = centre;
-  const viewbox = [lon - BOX_DEGREES, lat + BOX_DEGREES, lon + BOX_DEGREES, lat - BOX_DEGREES].join(',');
+  const { lat, lon } = centre ?? (await geocodeCity(city, fetchImpl));
+  const box = radiusKm * KM;
+  const viewbox = [lon - box, lat + box, lon + box, lat - box].join(',');
   const searches = searchesFor(venueType, preference);
   const words = preferenceWords(preference);
   const found = new Map<string, Venue & { score: number }>();
@@ -228,7 +405,9 @@ export async function findVenues(
     if (found.size >= ENOUGH) break;
     await pause(SPACING_MS);
     const url = `${NOMINATIM}?format=jsonv2&limit=20&bounded=1&viewbox=${viewbox}&q=${encodeURIComponent(query)}`;
-    for (const venue of toVenues(await getJson(url, fetchImpl), city)) {
+    const data = await getJson(url, fetchImpl);
+    const hits = Array.isArray(data) ? data.filter((h) => isHit(h) && !NOT_VENUES.has(h.category ?? '')) : [];
+    for (const venue of toVenues(hits, city)) {
       // Name searches can match shops or flats; keep places whose name carries the word or sounds like a venue.
       const byName = !query.startsWith('[');
       if (byName && !venue.name.toLowerCase().includes(query.split(' ')[0]) && !EVENT_NAME.test(venue.name))

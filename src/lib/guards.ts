@@ -91,9 +91,11 @@ const isCeremonyIdeas = (v: unknown) =>
       isObject(c) &&
       isString(c.ceremonyId) &&
       isString(c.theme) &&
-      isStrings(c.palette) &&
-      isStrings(c.decor) &&
-      (c.photoMatches === undefined || typeof c.photoMatches === 'boolean'),
+      Array.isArray(c.palette) &&
+      c.palette.every(
+        (p) => isObject(p) && isString(p.name) && isString(p.hex) && /^#[0-9a-f]{6}$/i.test(p.hex),
+      ) &&
+      isStrings(c.decor),
   );
 
 const isMenu = (v: unknown) =>

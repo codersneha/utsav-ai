@@ -1,5 +1,4 @@
 import type { EventType } from '../../types.js';
-import type { PhotoKey } from './photos.js';
 
 /**
  * Curated cultural knowledge: how each community actually celebrates — the
@@ -72,8 +71,6 @@ export interface Ceremony {
   decor: string[];
   /** What is typically eaten at this function. */
   food: string;
-  /** A décor photo of this kind of function, shown only when it fits the plan. */
-  photo?: PhotoKey;
 }
 
 export interface Tradition {
@@ -143,7 +140,6 @@ const haldi = (
     'A low seat (patla) with a turmeric bowl set-up',
   ],
   food: 'A light, homely brunch — the heavy feast is saved for the wedding.',
-  photo: 'haldi',
 });
 
 const sangeet = (): Ceremony => ({
@@ -176,7 +172,6 @@ const reception = (
     'Warm fairy lights and a photo corner',
   ],
   food: 'The reception dinner — see the menu.',
-  photo: 'reception',
 });
 
 const engagement = (name: string, about: string, id = 'engagement'): Ceremony => ({
@@ -333,7 +328,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'Hand-held palm fans and a fresh banana-leaf setting',
         ],
         food: 'A grand home-style meal: rice, fish-head dal, five fries, fish and payesh.',
-        photo: 'aiburobhat',
       },
       {
         id: 'gaye-holud',
@@ -525,7 +519,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'Marigold and rose strings at the entrance',
         ],
         food: 'The wedding feast — after an Anand Karaj, breakfast or a langar-style lunch.',
-        photo: 'pheras',
       },
       reception(),
     ],
@@ -661,7 +654,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'Brass lamps and rangoli',
         ],
         food: 'The wedding feast — see the menu.',
-        photo: 'mandap',
       },
       reception(),
     ],
@@ -799,7 +791,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'Brass diyas and rangoli',
         ],
         food: 'The wedding thali or buffet — see the menu.',
-        photo: 'mandap',
       },
       reception(),
     ],
@@ -916,7 +907,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'Marigold and mogra strings, rangoli and brass samai lamps',
         ],
         food: 'The wedding pangat — see the menu.',
-        photo: 'mandap',
       },
       reception(),
     ],
@@ -1462,7 +1452,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'A floral arch at the church entrance',
         ],
         food: 'Refreshments after the service, then the reception.',
-        photo: 'churchWedding',
       },
       reception(
         'Reception',
@@ -1559,7 +1548,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         palette: [RANI, GOLD, IVORY],
         decor: ['A floral mandap', 'A rose-petal aisle', 'Warm lights and drapes'],
         food: 'The wedding feast — see the menu.',
-        photo: 'mandap',
       },
       reception(),
     ],
@@ -1581,7 +1569,6 @@ export const PARTY_CEREMONIES: Record<'birthday' | 'community' | 'corporate', Ce
       'A photo corner with props',
     ],
     food: 'See the menu.',
-    photo: 'birthdayDecor',
   },
   community: {
     id: 'event',

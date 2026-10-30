@@ -60,7 +60,7 @@ describe('App end-to-end flow', () => {
 
     // Budget: exact allocation and expense tracking.
     await user.click(screen.getByRole('tab', { name: 'Budget' }));
-    expect(screen.getByText('Catering')).toBeInTheDocument();
+    expect(screen.getAllByText('Catering').length).toBeGreaterThan(0);
     await user.type(screen.getByLabelText('Amount spent on Venue & stay'), '9999999');
     expect(screen.getByText(/Spending is over plan in: Venue & stay/)).toBeInTheDocument();
     expect(await axeViolations(container)).toEqual([]);
@@ -137,7 +137,8 @@ describe('App end-to-end flow', () => {
     const summary = await screen.findByRole('region', { name: 'Diwali Mela' });
     expect(within(summary).getByText('Birthday')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start a new plan' }));
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, start over' }));
     expect(
       screen.getByRole('heading', { level: 1, name: /Plan celebrations people remember/ }),
     ).toBeInTheDocument();

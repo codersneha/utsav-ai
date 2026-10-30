@@ -42,7 +42,11 @@ export function InspirationCard({ onUse }: Props) {
   const use = () => {
     if (!look) return;
     onUse({
-      colors: look.palette.map((p) => p.name).join(', '),
+      // Names with hex codes, so the décor palette uses exactly the photo's colours.
+      colors: look.palette
+        .slice(0, 4)
+        .map((p) => `${p.name} ${p.hex}`)
+        .join(', '),
       note: `Inspired by a photo: ${look.theme} — ${look.elements.slice(0, 4).join(', ')}`,
     });
     setUsed(true);

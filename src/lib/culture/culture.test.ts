@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { birthdayDetails, weddingDetails } from '../../test/fixtures.js';
 import type { EventDetails } from '../../types.js';
 import {
-  PHOTOS,
   TRADITION_DATA,
   ceremoniesFor,
-  decorPhoto,
   decorTier,
   defaultMenu,
   findDish,
@@ -162,29 +160,17 @@ describe('menus fit the food budget', () => {
   });
 });
 
-describe('décor photos', () => {
-  it('come only from Wikimedia Commons (allowed by the CSP) with a licence and description', () => {
-    for (const photo of Object.values(PHOTOS)) {
-      expect(photo.src).toMatch(/^https:\/\/upload\.wikimedia\.org\//);
-      expect(photo.page).toMatch(/^https:\/\/commons\.wikimedia\.org\//);
-      expect(photo.license.length).toBeGreaterThan(0);
-      expect(photo.shows.length).toBeGreaterThan(10);
-    }
-  });
-
-  it('are shown only when they fit the budget level', () => {
-    const reception = ceremoniesFor({ ...bengali, ceremonies: ['bou-bhaat'] })[0];
-    expect(decorPhoto(reception, 'simple')).toBeDefined();
-    expect(decorPhoto(reception, 'classic')).toBeUndefined();
+describe('décor level', () => {
+  it('follows the décor budget per function', () => {
     expect(decorTier({ ...bengali, budget: 25_00_000, guests: 300 })).toBe('classic');
     expect(decorTier({ ...bengali, budget: 3_00_000, guests: 100 })).toBe('simple');
   });
 
-  it('every photo a function names exists, and every tradition’s defaults exist', () => {
+  it('every tradition’s default functions exist and every dish has a cost', () => {
     for (const t of Object.values(TRADITION_DATA)) {
-      for (const c of t.ceremonies) if (c.photo) expect(PHOTOS[c.photo]).toBeDefined();
       expect(t.defaultCeremonies.every((id) => t.ceremonies.some((c) => c.id === id))).toBe(true);
       for (const course of t.courses) for (const d of course.dishes) expect(d.cost).toBeGreaterThan(0);
+      for (const c of t.ceremonies) expect(c.palette.every((p) => /^#[0-9a-f]{6}$/i.test(p.hex))).toBe(true);
     }
   });
 });

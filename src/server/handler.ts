@@ -22,10 +22,17 @@ import {
   type Refinement,
 } from '../lib/prompts.js';
 import { LIMITS, cleanText, isVenueType, validateEventDetails } from '../lib/validation.js';
-import type { ChatTurn, EventDetails, IdeasSection } from '../types.js';
+import type { ChatTurn, EventDetails, IdeasSection, Venue } from '../types.js';
 import { DEFAULT_MODEL, GeminiError, generateText, type GeminiRequest } from './gemini.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
-import { VenueLookupError, checkVenue, findVenues } from './venues.js';
+import {
+  VenueLookupError,
+  checkVenue,
+  findVenues,
+  geocodeCity,
+  resolveMapsLink,
+  type Area,
+} from './venues.js';
 
 export const MAX_BODY_BYTES = 16 * 1024;
 /** Photo uploads are resized in the browser to ~200 KB; this leaves generous headroom. */
@@ -196,31 +203,50 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
   }
 }
 
-/** Venue check / search via the map provider (no AI key needed). Results are cached for a day. */
+/** Venue check, search and Google Maps links via the map provider (no AI key needed). Cached for a day. */
 async function handleVenues(
   payload: Record<string, unknown>,
   deps: HandlerDeps,
   cache: LruCache<unknown>,
 ): Promise<Response> {
+  const action =
+    payload.action === 'check' || payload.action === 'search' || payload.action === 'link'
+      ? payload.action
+      : null;
   const city = cleanText(payload.city, LIMITS.cityMax);
   const name = cleanText(payload.name, LIMITS.venueMax);
-  const action = payload.action === 'check' ? 'check' : payload.action === 'search' ? 'search' : null;
-  if (!action || city.length < 2 || (action === 'check' && name.length < 2)) {
-    return json(400, { error: 'Invalid venue request' });
-  }
+  const link = typeof payload.url === 'string' ? payload.url.trim().slice(0, 600) : '';
+  const near = cleanText(payload.near, LIMITS.cityMax) || city;
+  const radiusKm = payload.radiusKm === 25 ? 25 : 12;
+  const invalid =
+    !action ||
+    (action === 'link' ? !/^https:\/\//.test(link) : city.length < 2) ||
+    (action === 'check' && name.length < 2);
+  if (invalid) return json(400, { error: 'Invalid venue request' });
+
   const venueType = isVenueType(payload.venueType) ? payload.venueType : 'undecided';
   const preference = cleanText(payload.preference, LIMITS.venueMax);
-  const key = `venues:${action}:${city.toLowerCase()}:${name.toLowerCase()}:${venueType}:${preference.toLowerCase()}`;
+  const key = [action, city, name, link, near, radiusKm, venueType, preference].join('|').toLowerCase();
   const cached = cache.get(key);
-  if (cached) return json(200, { venues: cached, cached: true });
+  if (cached) return json(200, { ...(cached as object), cached: true });
   const fetchImpl = deps.mapFetch ?? deps.fetchImpl;
   try {
-    const venues =
-      action === 'check'
-        ? await checkVenue(name, city, fetchImpl)
-        : await findVenues(city, fetchImpl, { venueType, preference });
-    cache.set(key, venues);
-    return json(200, { venues });
+    let body: { venues: Venue[]; area?: Area };
+    if (action === 'link') {
+      const venue = await resolveMapsLink(link, fetchImpl);
+      if (!venue) return json(422, { error: 'That doesn’t look like a Google Maps link to a place' });
+      body = { venues: [venue] };
+    } else if (action === 'check') {
+      body = { venues: await checkVenue(name, city, fetchImpl) };
+    } else {
+      const area = await geocodeCity(near, fetchImpl);
+      body = {
+        venues: await findVenues(city, fetchImpl, { venueType, preference, centre: area, radiusKm }),
+        area,
+      };
+    }
+    cache.set(key, body);
+    return json(200, body);
   } catch (err) {
     console.error(
       `[generate] venues ${action} failed: ${err instanceof Error ? err.message : 'unknown error'}`,

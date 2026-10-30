@@ -13,9 +13,10 @@ import {
   isVendorEntry,
 } from '../lib/guards';
 import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
+import { buildBudget } from '../lib/budget';
 import { buildPlan } from '../lib/plan';
 import { readSharedPlan } from '../lib/share';
-import { isBoolean, isNumber, isRecordOf } from '../lib/storage';
+import { isBoolean, isNumber, isRecordOf, isString, saveJson } from '../lib/storage';
 import { validateEventDetails } from '../lib/validation';
 import type {
   ChatTurn,
@@ -133,6 +134,7 @@ export function usePlanner() {
   );
   const [vendors, setVendors] = usePersistentState<VendorEntry[]>('vendors', [], isArrayOf(isVendorEntry));
   const [guests, setGuests] = usePersistentState<GuestEntry[]>('guests', [], isArrayOf(isGuestEntry));
+  const [budgetLocks, setBudgetLocks] = usePersistentState<string[]>('budgetLocks', [], isArrayOf(isString));
   const [chat, setChat] = usePersistentState<ChatTurn[]>('chat', [], isArrayOf(isChatTurn));
   const [asking, setAsking] = useState(false);
   const [busySection, setBusySection] = useState<IdeasSection | null>(null);
@@ -235,7 +237,13 @@ export function usePlanner() {
     const before = snapshot();
     if (!details || !before) return;
     const result = validateEventDetails(
-      { ...details, colors: look.colors, preferences: `${details.preferences} ${look.note}`.trim() },
+      {
+        ...details,
+        colors: look.colors,
+        // Replace any earlier photo note rather than piling them up.
+        preferences:
+          `${details.preferences.replace(/Inspired by a photo:[^.]*\.?/g, '').trim()} ${look.note}.`.trim(),
+      },
       details.date < today ? details.date : today,
     );
     if (!result.ok) return;
@@ -334,6 +342,8 @@ export function usePlanner() {
     setCustomTasks([]);
     setVendors([]);
     setGuests([]);
+    setBudgetLocks([]);
+    saveJson('venueLink', null);
     setChat([]);
     setChange(null);
     setHistory([]);
@@ -367,6 +377,21 @@ export function usePlanner() {
           return next;
         }),
       setSpent: (id: string, amount: number) => setSpent((s) => ({ ...s, [id]: amount })),
+      /** Saves a whole new split; only amounts that differ from the suggestion count as the user's own. */
+      setAmounts: (amounts: Record<string, number>) => {
+        if (!details) return;
+        const suggested = buildBudget(details.eventType, details.budget, details.guests, details.priorities);
+        setOverrides(
+          Object.fromEntries(
+            suggested.lines
+              .filter((l) => amounts[l.id] !== undefined && amounts[l.id] !== l.amount)
+              .map((l) => [l.id, amounts[l.id]]),
+          ),
+        );
+      },
+      locks: budgetLocks,
+      toggleLock: (id: string) =>
+        setBudgetLocks((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id])),
       applyTradeOff,
     },
     timeline: {

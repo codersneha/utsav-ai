@@ -1,14 +1,11 @@
 import {
   CalendarDays,
-  CalendarPlus,
-  Download,
   LayoutDashboard,
   Lightbulb,
   ListChecks,
   MapPin,
   MessageCircleHeart,
   Pencil,
-  Printer,
   RotateCcw,
   Store,
   Shuffle,
@@ -27,6 +24,8 @@ import { AskPanel } from './AskPanel';
 import { BudgetPanel } from './BudgetPanel';
 import { ChecklistPanel } from './ChecklistPanel';
 import { GuestsPanel } from './GuestsPanel';
+import { PlanActions } from './PlanToolbar';
+import { PrintSummary, usePrinting } from './PrintSummary';
 import { IdeasPanel } from './IdeasPanel';
 import { Overview } from './Overview';
 import { Tabs } from './Tabs';
@@ -63,6 +62,7 @@ const icon = (Icon: typeof Pencil) => <Icon size={18} aria-hidden="true" />;
 export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
   const { details } = plan;
   const [tab, setTab] = useState('overview');
+  const printing = usePrinting();
   const daysToGo = daysBetween(planner.today, details.date);
   const changeRef = useRef<HTMLDivElement>(null);
 
@@ -134,7 +134,9 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           guests={details.guests}
           overrides={planner.budget.overrides}
           spent={planner.budget.spent}
-          onOverride={planner.budget.setOverride}
+          onSetAmounts={planner.budget.setAmounts}
+          locks={planner.budget.locks}
+          onToggleLock={planner.budget.toggleLock}
           onSpentChange={planner.budget.setSpent}
           onApplyTradeOff={planner.budget.applyTradeOff}
         />
@@ -151,6 +153,8 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           eventDate={details.date}
           done={planner.timeline.done}
           onToggle={planner.timeline.toggle}
+          onDownloadIcs={() => downloadIcs(plan)}
+          calendarUrl={googleCalendarUrl(details)}
           onAddTask={planner.timeline.addTask}
           onRemoveTask={planner.timeline.removeTask}
           logistics={planner.logistics.value}
@@ -235,6 +239,16 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
 
   return (
     <div className="plan">
+      {printing && (
+        <PrintSummary
+          plan={plan}
+          ideas={planner.ideas.value}
+          logistics={planner.logistics.value}
+          timelineDone={planner.timeline.done}
+          vendors={planner.vendors.entries}
+          guests={planner.guests.entries}
+        />
+      )}
       <section className={`event-hero ${details.eventType}`} aria-labelledby="plan-title">
         <div className="event-hero-top">
           <div>
@@ -267,28 +281,7 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
             )}
           </p>
         </div>
-        <div className="actions no-print">
-          <button type="button" className="btn on-dark" onClick={onEdit}>
-            {icon(Pencil)} Change details
-          </button>
-          <button type="button" className="btn on-dark" onClick={() => downloadIcs(plan)}>
-            {icon(Download)} Download timeline (.ics)
-          </button>
-          <a
-            className="btn on-dark"
-            href={googleCalendarUrl(details)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {icon(CalendarPlus)} Add to Google Calendar<span className="sr-only"> (opens in a new tab)</span>
-          </a>
-          <button type="button" className="btn on-dark" onClick={() => window.print()}>
-            {icon(Printer)} Print / save PDF
-          </button>
-          <button type="button" className="btn on-dark" onClick={planner.reset}>
-            Start a new plan
-          </button>
-        </div>
+        <PlanActions plan={plan} onEdit={onEdit} onReset={planner.reset} />
       </section>
 
       {planner.change && (

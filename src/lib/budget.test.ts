@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BUDGET_TEMPLATES,
-  PRIORITY_BOOST,
+  allocateRemainder,
   applyPriorities,
+  BUDGET_TEMPLATES,
   buildBudget,
+  describeShift,
   guestImpact,
+  PRIORITY_BOOST,
+  rebalance,
+  releaseCategory,
   splitExact,
   suggestTradeOffs,
   summariseSpend,
@@ -157,5 +161,52 @@ describe('suggestTradeOffs', () => {
     const plan = buildBudget('wedding', 2_500_000, 300, [], overrides);
     const options = suggestTradeOffs('wedding', plan, 300, overrides);
     expect(options[0]).toMatchObject({ id: 'reset', action: { kind: 'overrides', overrides: {} } });
+  });
+});
+
+describe('rebalancing the split', () => {
+  const plan = buildBudget('wedding', 1_000_000, 200, []);
+  const sum = (a: Record<string, number>) => Object.values(a).reduce((s, n) => s + n, 0);
+
+  it('moves one category and keeps the total exact, sharing the change in proportion', () => {
+    const next = rebalance(plan, 'decor', 200_000);
+    expect(next.decor).toBe(200_000);
+    expect(sum(next)).toBe(1_000_000);
+    const venue = plan.lines.find((l) => l.id === 'venue')!.amount;
+    expect(next.venue).toBeLessThan(venue);
+  });
+
+  it('never touches locked categories and caps at what the others can give', () => {
+    const locked = plan.lines.filter((l) => l.id !== 'decor' && l.id !== 'photo').map((l) => l.id);
+    const next = rebalance(plan, 'decor', 5_000_000, locked);
+    for (const id of locked) expect(next[id]).toBe(plan.lines.find((l) => l.id === id)!.amount);
+    expect(next.photo).toBe(0);
+    expect(sum(next)).toBe(1_000_000);
+  });
+
+  it('removes money to unallocated, then places it in one category or spreads it', () => {
+    const released = buildBudget('wedding', 1_000_000, 200, [], releaseCategory(plan, 'entertainment'));
+    const freed = plan.lines.find((l) => l.id === 'entertainment')!.amount;
+    expect(released.unallocated).toBe(freed);
+
+    const intoFood = allocateRemainder(released, 'catering');
+    expect(intoFood.catering).toBe(released.lines.find((l) => l.id === 'catering')!.amount + freed);
+    expect(sum(intoFood)).toBe(1_000_000);
+
+    const spread = allocateRemainder(released, 'spread', ['venue']);
+    expect(sum(spread)).toBe(1_000_000);
+    expect(spread.entertainment).toBe(0);
+    expect(spread.venue).toBe(plan.lines.find((l) => l.id === 'venue')!.amount);
+  });
+
+  it('pulls an over-allocated split back within the total', () => {
+    const over = buildBudget('wedding', 1_000_000, 200, [], { venue: 600_000 });
+    expect(over.unallocated).toBeLessThan(0);
+    expect(sum(allocateRemainder(over, 'spread'))).toBe(1_000_000);
+  });
+
+  it('summarises what moved', () => {
+    const text = describeShift(plan, releaseCategory(plan, 'entertainment'));
+    expect(text).toMatch(/^Music & entertainment −₹[\d,]+ · Unallocated \+₹[\d,]+$/);
   });
 });

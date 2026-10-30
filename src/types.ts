@@ -164,11 +164,9 @@ export interface CeremonyIdea {
   ceremonyId: string;
   /** A short theme name, e.g. "Shola & Marigold". */
   theme: string;
-  /** Colour names for this function. */
-  palette: string[];
+  /** Colours for this function, with hex codes for the swatches. */
+  palette: { name: string; hex: string }[];
   decor: string[];
-  /** The AI judged the reference photo to match these ideas (absent for curated ideas). */
-  photoMatches?: boolean;
 }
 
 /** Dishes chosen for one course of the menu (always from the knowledge base). */

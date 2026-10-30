@@ -2,6 +2,7 @@ import { Share2 } from 'lucide-react';
 import { Suspense, lazy, useRef, useState } from 'react';
 import { MarigoldMark, Toran } from './components/Brand';
 import { Landing } from './components/Landing';
+import { PlanReadiness } from './components/PlanToolbar';
 import { PlannerForm } from './components/PlannerForm';
 import { usePlanner } from './hooks/usePlanner';
 import type { EventDetails } from './types';
@@ -66,7 +67,7 @@ export default function App() {
       <a href="#main" className="skip-link">
         Skip to main content
       </a>
-      <header className="site-header">
+      <header className="site-header no-print">
         <div className="container">
           <p className="logo">
             <MarigoldMark />
@@ -74,7 +75,13 @@ export default function App() {
               Utsav<em>AI</em>
             </span>
           </p>
-          <p className="tagline">Weddings · birthdays · community celebrations</p>
+          {plan && !showForm && (
+            <PlanReadiness
+              plan={plan}
+              timelineDone={planner.timeline.done}
+              vendors={planner.vendors.entries}
+            />
+          )}
         </div>
         <Toran />
       </header>
@@ -128,7 +135,7 @@ export default function App() {
           </Suspense>
         )}
       </main>
-      <footer className="site-footer">
+      <footer className="site-footer no-print">
         <div className="container">
           <p>
             UtsavAI · Built for PromptWars Virtual · AI by Google Gemini · Amounts are estimates, not quotes ·

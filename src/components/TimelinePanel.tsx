@@ -1,3 +1,4 @@
+import { CalendarPlus, Download } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { daysBetween, formatDate } from '../lib/dates';
 import { tasksNeedingAttention, timelineProgress } from '../lib/timeline';
@@ -14,6 +15,8 @@ interface Props {
   logistics: Logistics | null;
   logisticsLoading: boolean;
   logisticsNotice?: string;
+  onDownloadIcs: () => void;
+  calendarUrl: string;
 }
 
 function relative(days: number): string {
@@ -31,7 +34,18 @@ export function TimelinePanel(props: Props) {
 
   return (
     <section aria-labelledby="timeline-heading">
-      <h3 id="timeline-heading">Planning timeline</h3>
+      <div className="panel-head">
+        <h3 id="timeline-heading">Planning timeline</h3>
+        <div className="actions">
+          <button type="button" className="btn small" onClick={props.onDownloadIcs}>
+            <Download size={16} aria-hidden="true" /> Download reminders (.ics)
+          </button>
+          <a className="btn small" href={props.calendarUrl} target="_blank" rel="noopener noreferrer">
+            <CalendarPlus size={16} aria-hidden="true" /> Add to Google Calendar
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        </div>
+      </div>
       <div className="progress-row">
         <label htmlFor="timeline-progress">Tasks done: {progress}%</label>
         <progress id="timeline-progress" max={100} value={progress}>

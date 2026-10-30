@@ -89,7 +89,7 @@ describe('photo inspiration', () => {
     await vi.waitFor(() => {
       const last = sentBodies(fetchSpy).at(-1);
       expect(last).toMatchObject({ mode: 'ideas', section: 'decor' });
-      expect(last?.details.colors).toBe('Marigold, Leaf green');
+      expect(last?.details.colors).toBe('Marigold #f2a900, Leaf green #3a7d44');
     });
   });
 

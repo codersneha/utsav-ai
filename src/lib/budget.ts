@@ -268,3 +268,79 @@ export function summariseSpend(plan: BudgetPlan, spent: Record<string, number>):
   }
   return { planned: plan.total, spent: totalSpent, remaining: plan.total - totalSpent, overBudget };
 }
+
+const amountsOf = (plan: BudgetPlan) => Object.fromEntries(plan.lines.map((l) => [l.id, l.amount]));
+
+/**
+ * Moves one category to `wanted` and takes (or gives) the difference from the
+ * other unlocked categories in proportion to their size, so the total stays
+ * the same. Returns the new amount for every category.
+ */
+export function rebalance(
+  plan: BudgetPlan,
+  id: string,
+  wanted: number,
+  locked: string[] = [],
+): Record<string, number> {
+  const amounts = amountsOf(plan);
+  const line = plan.lines.find((l) => l.id === id);
+  if (!line) return amounts;
+  const others = plan.lines.filter((l) => l.id !== id && !locked.includes(l.id));
+  const othersTotal = others.reduce((s, l) => s + l.amount, 0);
+  const target = Math.min(Math.max(0, Math.round(wanted)), line.amount + othersTotal);
+  amounts[id] = target;
+  if (others.length > 0) {
+    const weights = othersTotal > 0 ? others.map((l) => l.amount) : others.map(() => 1);
+    splitExact(othersTotal - (target - line.amount), weights).forEach((amount, i) => {
+      amounts[others[i].id] = amount;
+    });
+  }
+  return amounts;
+}
+
+/** Takes all the money out of a category; it waits in "unallocated" until the user places it. */
+export function releaseCategory(plan: BudgetPlan, id: string): Record<string, number> {
+  return { ...amountsOf(plan), [id]: 0 };
+}
+
+/**
+ * Places the unallocated money: into one category, or spread across the
+ * unlocked categories in proportion (`'spread'`). A negative balance (more
+ * planned than the total) is taken back the same way.
+ */
+export function allocateRemainder(
+  plan: BudgetPlan,
+  target: string | 'spread',
+  locked: string[] = [],
+): Record<string, number> {
+  const amounts = amountsOf(plan);
+  const rest = plan.unallocated;
+  if (rest === 0) return amounts;
+  if (target !== 'spread') {
+    amounts[target] = Math.max(0, (amounts[target] ?? 0) + rest);
+    return amounts;
+  }
+  const pool = plan.lines.filter((l) => !locked.includes(l.id) && (rest > 0 || l.amount > 0));
+  if (pool.length === 0) return amounts;
+  const poolTotal = pool.reduce((s, l) => s + l.amount, 0);
+  const weights = poolTotal > 0 ? pool.map((l) => l.amount) : pool.map(() => 1);
+  splitExact(poolTotal + rest, weights).forEach((amount, i) => {
+    amounts[pool[i].id] = Math.max(0, amount);
+  });
+  return amounts;
+}
+
+/** "Venue −₹201 · Catering +₹439" — what a budget change moved, for a short confirmation. */
+export function describeShift(plan: BudgetPlan, next: Record<string, number>): string {
+  const rupees = (n: number) => `₹${Math.abs(n).toLocaleString('en-IN')}`;
+  const parts = plan.lines
+    .map((l) => ({ label: l.label, delta: (next[l.id] ?? l.amount) - l.amount }))
+    .filter((c) => c.delta !== 0)
+    .map((c) => `${c.label} ${c.delta > 0 ? '+' : '−'}${rupees(c.delta)}`);
+  const unallocated = plan.total - Object.values(next).reduce((s, n) => s + n, 0);
+  if (unallocated !== plan.unallocated) {
+    const delta = unallocated - plan.unallocated;
+    parts.push(`Unallocated ${delta > 0 ? '+' : '−'}${rupees(delta)}`);
+  }
+  return parts.join(' · ');
+}

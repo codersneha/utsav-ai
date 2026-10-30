@@ -17,11 +17,17 @@ const CEREMONIES_SCHEMA = {
     properties: {
       id: { type: 'STRING' },
       theme: { type: 'STRING' },
-      palette: { type: 'ARRAY', items: { type: 'STRING' } },
+      palette: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: { name: { type: 'STRING' }, hex: { type: 'STRING', description: '#rrggbb' } },
+          required: ['name', 'hex'],
+        },
+      },
       decor: { type: 'ARRAY', items: { type: 'STRING' } },
-      photoMatches: { type: 'BOOLEAN' },
     },
-    required: ['id', 'theme', 'palette', 'decor', 'photoMatches'],
+    required: ['id', 'theme', 'palette', 'decor'],
   },
 } as const;
 
@@ -59,6 +65,16 @@ export const IDEAS_SCHEMAS: Record<IdeasSection | 'all', object> = {
 };
 
 const ITEM_MAX = 200;
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Colour names with valid hex codes only (so swatches are always real colours). */
+function cleanPalette(value: unknown) {
+  return cleanObjects(value, 4, (p) => {
+    const name = cleanText(p.name, 30);
+    const hex = typeof p.hex === 'string' ? p.hex.trim().toLowerCase() : '';
+    return name && HEX.test(hex) ? { name, hex } : null;
+  });
+}
 
 /** Decor ideas are kept only for ceremonies actually being planned. */
 function parseCeremonies(value: unknown, details: EventDetails): CeremonyIdea[] {
@@ -71,9 +87,8 @@ function parseCeremonies(value: unknown, details: EventDetails): CeremonyIdea[] 
     const idea = {
       ceremonyId: id,
       theme: cleanText(o.theme, 60),
-      palette: cleanList(o.palette, 4, 30),
+      palette: cleanPalette(o.palette),
       decor: cleanList(o.decor, 4, ITEM_MAX),
-      photoMatches: o.photoMatches === true,
     };
     return idea.theme && idea.decor.length > 0 ? idea : null;
   });
@@ -181,14 +196,24 @@ const EXTRAS: Record<EventType, Pick<Ideas, 'activities' | 'budgetTips'>> = {
   },
 };
 
+/** Colours written as "Name #rrggbb" (e.g. from an inspiration photo), if there are at least two. */
+export function coloursFromText(text: string): { name: string; hex: string }[] {
+  const found = [...text.matchAll(/([A-Za-z][A-Za-z ]{0,28}?)\s*(#[0-9a-fA-F]{6})/g)].map((m) => ({
+    name: m[1].trim(),
+    hex: m[2].toLowerCase(),
+  }));
+  return found.length >= 2 ? found.slice(0, 4) : [];
+}
+
 /** Deterministic ideas straight from the knowledge base, used when Gemini is unavailable. */
 export function fallbackIdeas(details: EventDetails): Ideas {
   const who = details.title || `your ${LABELS[details.eventType]}`;
   const tradition = traditionOf(details);
+  const own = coloursFromText(details.colors);
   const ceremonies = ceremoniesFor(details).map((c) => ({
     ceremonyId: c.id,
     theme: c.name,
-    palette: c.palette.map((p) => p.name),
+    palette: own.length > 0 ? own : c.palette,
     decor: c.decor,
   }));
   const style = details.eventType === 'wedding' ? `${tradition.label} ` : '';

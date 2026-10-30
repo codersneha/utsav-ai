@@ -37,5 +37,6 @@ export const isRecordOf =
   (value: unknown): value is Record<string, V> =>
     typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every(check);
 
+export const isString = (v: unknown): v is string => typeof v === 'string';
 export const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean';
 export const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);

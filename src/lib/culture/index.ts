@@ -1,6 +1,5 @@
 import type { Diet, EventDetails, EventType, MenuChoice } from '../../types.js';
 import { buildBudget } from '../budget.js';
-import { PHOTOS, type DecorTier, type Photo } from './photos.js';
 import {
   PARTY_CEREMONIES,
   TRADITION_DATA,
@@ -10,7 +9,6 @@ import {
   type Tradition,
 } from './traditions.js';
 
-export { PHOTOS, type DecorTier, type Photo, type PhotoKey } from './photos.js';
 export {
   TRADITIONS,
   TRADITION_DATA,
@@ -291,6 +289,8 @@ export function findDish(
     ?.dishes.find((d) => d.name === name);
 }
 
+export type DecorTier = 'simple' | 'classic' | 'grand';
+
 /** How much the décor budget allows per function. */
 export function decorTier(
   details: Pick<EventDetails, 'eventType' | 'tradition' | 'ceremonies' | 'budget' | 'guests' | 'priorities'>,
@@ -306,10 +306,4 @@ export function decorTier(
   if (perFunction < 40_000) return 'simple';
   if (perFunction < 250_000) return 'classic';
   return 'grand';
-}
-
-/** A ceremony's photo, only when the décor in it honestly fits this budget level. */
-export function decorPhoto(ceremony: Ceremony, tier: DecorTier): Photo | undefined {
-  const photo = ceremony.photo ? PHOTOS[ceremony.photo] : undefined;
-  return photo && (photo.tiers as DecorTier[]).includes(tier) ? photo : undefined;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures.js';
 import { menuFor } from './culture/index.js';
-import { fallbackIdeas, mergeIdeas, parseIdeas } from './ideas.js';
+import { coloursFromText, fallbackIdeas, mergeIdeas, parseIdeas } from './ideas.js';
 
 describe('parseIdeas', () => {
   it('parses valid JSON text into ceremonies and courses', () => {
@@ -117,5 +117,18 @@ describe('fallbackIdeas', () => {
       'reception',
     ]);
     expect(fallbackIdeas(birthdayDetails).ceremonies.map((c) => c.ceremonyId)).toEqual(['party']);
+  });
+});
+
+describe('colours from an inspiration photo', () => {
+  it('reads named hex colours and uses them for curated décor', () => {
+    const colors = 'Deep Violet #4b0082, Lavender Mist #e6e6fa';
+    expect(coloursFromText(colors)).toEqual([
+      { name: 'Deep Violet', hex: '#4b0082' },
+      { name: 'Lavender Mist', hex: '#e6e6fa' },
+    ]);
+    expect(coloursFromText('pastel pink and mint')).toEqual([]);
+    const ideas = fallbackIdeas({ ...birthdayDetails, colors });
+    expect(ideas.ceremonies[0].palette[0]).toEqual({ name: 'Deep Violet', hex: '#4b0082' });
   });
 });
