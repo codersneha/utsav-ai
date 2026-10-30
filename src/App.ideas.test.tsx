@@ -57,25 +57,37 @@ describe('culture-grounded ideas', () => {
 });
 
 describe('venues', () => {
-  it('finds venues near the city and lets the user choose one', async () => {
-    const { user, container } = await openBengaliSample();
+  it('opens Google Maps for the right kind of place and saves the venue from its link', async () => {
+    const { user, container, fetchSpy } = await openBengaliSample();
     await user.click(screen.getByRole('tab', { name: 'Vendors' }));
-    await user.type(screen.getByLabelText('What kind of place?'), 'garden with banquet hall');
-    await user.click(screen.getByRole('button', { name: 'Find places' }));
-    const choose = await screen.findByRole('button', { name: 'Choose Rajbari Banquet as the venue' });
-    expect(screen.getByRole('link', { name: /Photos & reviews on Google Maps/ })).toHaveAttribute(
+    const panel = screen.getByRole('region', { name: 'Venue' });
+    expect(within(panel).getByRole('link', { name: /^Find .* on Google Maps/ })).toHaveAttribute(
       'href',
-      expect.stringContaining('https://www.google.com/maps/search/'),
-    );
-    // Google's own ranked list for the same search, one click away.
-    expect(screen.getByRole('link', { name: /Top-rated on Google Maps/ })).toHaveAttribute(
-      'href',
-      expect.stringContaining(encodeURIComponent('best garden with banquet hall near')),
+      expect.stringMatching(/^https:\/\/www\.google\.com\/maps\/search\/.*best%20.*%20near%20Kolkata$/),
     );
     expect(await axeViolations(container)).toEqual([]);
-    await user.click(choose);
-    expect(await screen.findByText(/“Rajbari Banquet” is your venue/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Choose .* as the venue/ })).not.toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText('Paste its Google Maps link'),
+      'https://maps.app.goo.gl/SJYx7dyvRCMqE1za9',
+    );
+    await user.click(screen.getByRole('button', { name: /Use link/ }));
+    expect(await screen.findByText(/“Boho The Sky Cafe” is your venue/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Paste its Google Maps link')).toHaveValue('');
+    // It is recorded as a vendor too, and a café venue means no separate caterer.
+    expect(screen.getAllByText('Boho The Sky Cafe').length).toBeGreaterThan(1);
+    expect(screen.queryByRole('group', { name: 'Caterer' })).not.toBeInTheDocument();
+    expect(sentBodies(fetchSpy).some((b) => b.mode === 'venues' && b.action === 'link')).toBe(true);
+  });
+
+  it('uses a link copied in Google Maps, and explains anything that is not a link', async () => {
+    const { user } = await openBengaliSample();
+    await user.click(screen.getByRole('tab', { name: 'Vendors' }));
+    await user.type(screen.getByLabelText('Paste its Google Maps link'), 'not a link at all');
+    await user.click(screen.getByRole('button', { name: /Use link/ }));
+    expect(await screen.findByText(/isn’t a Google Maps link/)).toBeInTheDocument();
+    vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('https://maps.app.goo.gl/SJYx7dyvRCMqE1za9');
+    await user.click(screen.getByRole('button', { name: 'Paste the copied link' }));
+    expect(await screen.findByText(/“Boho The Sky Cafe” is your venue/)).toBeInTheDocument();
   });
 });
 
@@ -164,22 +176,6 @@ describe('what if', () => {
 });
 
 describe('choosing a café as the venue', () => {
-  it('records the venue, clears the search, drops the caterer and plans from the menu photo', async () => {
-    const { user, fetchSpy } = await openBengaliSample();
-    await user.click(screen.getByRole('tab', { name: 'Vendors' }));
-    expect(screen.getByRole('group', { name: 'Caterer' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Find places' }));
-    await user.click(await screen.findByRole('button', { name: 'Choose Rajbari Banquet as the venue' }));
-
-    // Search results are cleared and the venue shows in the Venue row as chosen.
-    expect(screen.queryByRole('button', { name: /Choose .* as the venue/ })).not.toBeInTheDocument();
-    expect(await screen.findByText(/“Rajbari Banquet” is your venue/)).toBeInTheDocument();
-    const venueRow = screen.getByRole('group', { name: 'Venue' });
-    expect(venueRow).toHaveTextContent('Chosen');
-    expect(venueRow).toHaveTextContent('Rajbari Banquet');
-    expect(sentBodies(fetchSpy).length).toBeGreaterThan(0);
-  });
-
   it('reads a restaurant menu photo into a priced party order', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
     window.localStorage.setItem(
@@ -318,35 +314,5 @@ describe('décor looks and the décor switch', () => {
           .at(-1),
       ).toMatchObject({ source: 'estimate' }),
     );
-  });
-});
-
-describe('a venue the open map does not list', () => {
-  it('sends the user to Google Maps and uses the link they copy', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
-    window.localStorage.setItem(
-      'utsav-ai:v1:details',
-      JSON.stringify({
-        ...birthdayDetails,
-        title: 'Tea party',
-        city: 'Kolkata',
-        date: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
-      }),
-    );
-    const user = userEvent.setup();
-    render(<App />);
-    await screen.findByRole('heading', { name: 'Tea party' });
-    await user.click(screen.getByRole('tab', { name: 'Vendors' }));
-    await user.type(screen.getByLabelText('Find a specific venue'), 'bubble and tea kolkata');
-    await user.click(screen.getByRole('button', { name: /^Find$/ }));
-    const search = await screen.findByRole('link', {
-      name: /Open “bubble and tea kolkata” in Google Maps/,
-    });
-    // The city is not repeated when it was already typed.
-    expect(search).toHaveAttribute('href', expect.stringMatching(/query=bubble%20and%20tea%20kolkata$/));
-    vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('https://maps.app.goo.gl/SJYx7dyvRCMqE1za9');
-    await user.click(screen.getByRole('button', { name: 'Use the copied link' }));
-    expect(await screen.findByText(/“Boho The Sky Cafe” is your venue/)).toBeInTheDocument();
-    expect(sentBodies(fetchSpy).some((b) => b.mode === 'venues' && b.action === 'link')).toBe(true);
   });
 });

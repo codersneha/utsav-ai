@@ -168,6 +168,9 @@ export function ChecklistPanel(props: Props) {
 
 function VendorRow({ group, ...props }: Props & { group: VendorGroup }) {
   const planned = props.budget.lines.find((l) => l.id === group.budgetId);
+  // A line shared with an earlier vendor (e.g. the cake comes out of catering) isn't this vendor's alone.
+  const sharedWith = props.groups.find((g) => g.budgetId === group.budgetId && g.id !== group.id);
+  const shared = sharedWith && props.groups.indexOf(sharedWith) < props.groups.indexOf(group);
   const quotes = summariseQuotes(props.entries, group.id);
   const mine = props.entries.filter((e) => e.groupId === group.id);
   const questions = props.logistics?.vendors[group.id]?.questions ?? [];
@@ -187,7 +190,11 @@ function VendorRow({ group, ...props }: Props & { group: VendorGroup }) {
           <span className="vendor-row-title">
             <strong id={`vendor-${group.id}`}>{group.vendor}</strong>
             <span className="muted small">
-              {planned ? `Budget ~${formatInr(planned.amount)}` : 'No budget line'}
+              {!planned
+                ? 'No budget line'
+                : shared
+                  ? `Part of the ${planned.label.toLowerCase()} budget`
+                  : `Budget ~${formatInr(planned.amount)}`}
               {quotes.lowest > 0 && ` · best quote ${formatInr(quotes.lowest)}`}
               {mine.length > 0 && ` · ${mine.length} contact${mine.length > 1 ? 's' : ''}`}
             </span>

@@ -1,15 +1,6 @@
-import {
-  Building2,
-  Check,
-  ClipboardPaste,
-  ExternalLink,
-  LocateFixed,
-  MapPin,
-  Search,
-  Star,
-} from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
-import { checkVenue, findVenues, venueFromMapsLink } from '../lib/api';
+import { Building2, Check, ClipboardPaste, ExternalLink, Link2, MapPin } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
+import { venueFromMapsLink } from '../lib/api';
 import { LIMITS } from '../lib/validation';
 import type { Venue, VenueType } from '../types';
 
@@ -20,7 +11,7 @@ interface Props {
   /** The user's own description of the place they want. */
   preference: string;
   onChoose: (venue: Venue) => void;
-  /** The venue chosen so far (from a search or a Google Maps link). */
+  /** The venue saved so far, read from a Google Maps link. */
   chosen: Venue | null;
   /** Why a Google Maps link typed as the venue couldn't be read. */
   resolveError?: string;
@@ -38,28 +29,10 @@ const TYPE_WORDS: Partial<Record<VenueType, string>> = {
 };
 
 const isLink = (text: string) => /^https?:\/\//i.test(text.trim());
-/** Adds the city to a search unless it was already typed. */
-const withCity = (query: string, city: string) =>
-  query.toLowerCase().includes(city.trim().toLowerCase()) ? query : `${query} ${city}`;
 const googleSearch = (query: string) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 
-function Rating({ venue }: { venue: Venue }) {
-  if (venue.rating === undefined) return null;
-  return (
-    <span
-      className="badge rating"
-      aria-label={`Rated ${venue.rating} out of 5 from ${venue.reviews ?? 0} reviews`}
-    >
-      <Star size={12} aria-hidden="true" fill="currentColor" /> {venue.rating}
-      {venue.reviews !== undefined && (
-        <span aria-hidden="true"> ({venue.reviews.toLocaleString('en-IN')})</span>
-      )}
-    </span>
-  );
-}
-
-function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; onChoose?: () => void }) {
+function VenueRow({ venue }: { venue: Venue }) {
   return (
     <li className="venue-row">
       <span className="icon-badge" aria-hidden="true">
@@ -67,12 +40,6 @@ function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; 
       </span>
       <div className="venue-row-main">
         <strong>{venue.name}</strong>
-        <div className="venue-tags">
-          <span className="badge subtle">{venue.kind}</span>
-          <Rating venue={venue} />
-          {venue.distanceKm !== undefined && <span className="badge subtle">{venue.distanceKm} km</span>}
-          {venue.match && <span className="badge match">{venue.match}</span>}
-        </div>
         {venue.address && <p className="muted small">{venue.address}</p>}
         <div className="venue-links">
           <a href={venue.mapsUrl} target="_blank" rel="noopener noreferrer">
@@ -80,31 +47,14 @@ function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; 
           </a>
         </div>
       </div>
-      {onChoose && (
-        <button
-          type="button"
-          className={`btn small${chosen ? ' primary' : ''}`}
-          onClick={onChoose}
-          disabled={chosen}
-          aria-label={chosen ? `${venue.name} is your venue` : `Choose ${venue.name} as the venue`}
-        >
-          {chosen ? (
-            <>
-              <Check size={16} aria-hidden="true" /> Chosen
-            </>
-          ) : (
-            'Choose'
-          )}
-        </button>
-      )}
     </li>
   );
 }
 
 /**
- * Two ways to settle the venue: look up a specific place by name or Google
- * Maps link (matched like a search engine would), or discover places of the
- * right kind near an area — or near the user.
+ * The venue comes from Google Maps: the user finds the place there (the search
+ * is already set up for the kind of venue they want), copies its link and
+ * pastes it here. The link gives the exact name and location.
  */
 export function VenuePanel({
   city,
@@ -115,127 +65,44 @@ export function VenuePanel({
   chosen,
   resolveError,
 }: Props) {
-  const [query, setQuery] = useState('');
-  const [lookup, setLookup] = useState<{ query: string; venues: Venue[]; error?: string } | null>(null);
-  const [looking, setLooking] = useState(false);
-  const [wish, setWish] = useState(preference);
-  const [near, setNear] = useState(city);
-  const [radiusKm, setRadiusKm] = useState(12);
-  const [results, setResults] = useState<{
-    venues: Venue[];
-    wish: string;
-    area?: string;
-    /** The same search on Google Maps, ranked by Google's ratings. */
-    google: string;
-  } | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState('');
+  const [link, setLink] = useState('');
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState('');
 
   const known = chosen?.name === venueName ? chosen : undefined;
   const pendingLink = isLink(venueName);
-  // A venue name typed in the form (not yet confirmed) is looked up once, to offer the matches.
+  // A name typed in the form is searched as it is; otherwise the best places of the right kind.
   const typedName = venueName && !known && !pendingLink ? venueName : '';
+  const what = preference.trim() || TYPE_WORDS[venueType] || 'party venues';
+  const search = typedName ? `${typedName} ${city}` : `best ${what} near ${city}`;
 
-  useEffect(() => {
-    if (!typedName) return;
-    let active = true;
-    void checkVenue(typedName, city).then((r) => {
-      if (active) setLookup({ query: typedName, ...r });
-    });
-    return () => {
-      active = false;
-    };
-  }, [typedName, city]);
-
-  const choose = (venue: Venue) => {
-    setResults(null);
-    setLookup(null);
-    setQuery('');
-    setSearchError('');
-    onChoose(venue);
+  const applyLink = async (text: string) => {
+    const url = text.match(/https?:\/\/\S+/)?.[0] ?? '';
+    if (!url) return setError('That isn’t a Google Maps link — in Google Maps, tap Share → Copy link.');
+    setError('');
+    setReading(true);
+    const r = await venueFromMapsLink(url);
+    setReading(false);
+    if (!r.venues[0]) return setError(r.error ?? 'We couldn’t read that link — copy it again from Share.');
+    setLink('');
+    onChoose(r.venues[0]);
   };
 
-  /** One box: a Google Maps link is read directly; a name is matched like a search engine would. */
-  const find = (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    void lookUp(query.trim());
+    void applyLink(link);
   };
 
-  const lookUp = async (text: string) => {
-    if (text.length < 2) return;
-    setLooking(true);
-    if (isLink(text)) {
-      const r = await venueFromMapsLink(text);
-      setLooking(false);
-      if (r.venues[0]) return choose(r.venues[0]);
-      return setLookup({ query: text, venues: [], error: r.error });
-    }
-    const r = await checkVenue(text, city);
-    setLooking(false);
-    setLookup({ query: text, ...r });
-  };
-
-  /** Reads a Google Maps link the user just copied (Share → Copy link) and uses it. */
-  const pasteLink = async () => {
-    let text = '';
+  /** Reads the link the user just copied in Google Maps. */
+  const pasteCopied = async () => {
     try {
-      text = (await navigator.clipboard.readText()).trim();
+      const text = (await navigator.clipboard.readText()).trim();
+      if (text) return void applyLink(text);
     } catch {
-      // Clipboard access declined or unsupported; the box above still takes the link.
+      // Clipboard access declined or unsupported; the box still takes the link.
     }
-    const link = text.match(/https?:\/\/\S+/)?.[0] ?? '';
-    if (!link) {
-      const message = 'No Google Maps link was copied yet — or paste it into “Find a specific venue”.';
-      // Shown next to whichever button was used: the name lookup's or the nearby results'.
-      if (lookup) setLookup({ ...lookup, error: message });
-      else setSearchError(message);
-      return;
-    }
-    setQuery(link);
-    void lookUp(link);
+    setError('No link was copied yet — or paste it into the box.');
   };
-
-  const discover = async (position?: { lat: number; lon: number }) => {
-    setSearching(true);
-    setSearchError('');
-    const wanted = wish.trim();
-    const r = await findVenues(city, {
-      venueType,
-      preference: wanted,
-      near: near.trim(),
-      radiusKm,
-      position,
-    });
-    const what = wanted || TYPE_WORDS[venueType] || 'party venues';
-    const where = position ? `${position.lat.toFixed(4)},${position.lon.toFixed(4)}` : near.trim();
-    setResults({
-      venues: r.venues,
-      wish: wanted,
-      area: r.area,
-      google: googleSearch(`best ${what} near ${where}`),
-    });
-    setSearchError(
-      r.error ??
-        (r.venues.length === 0 ? `No matching places on the open map around ${r.area ?? near}.` : ''),
-    );
-    setSearching(false);
-  };
-
-  const nearMe = () => {
-    if (!('geolocation' in navigator)) return setSearchError('Your browser can’t share its location.');
-    setSearching(true);
-    navigator.geolocation.getCurrentPosition(
-      (p) => void discover({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      () => {
-        setSearching(false);
-        setSearchError('Location access was declined — type your locality or PIN code instead.');
-      },
-      { timeout: 10_000, maximumAge: 300_000 },
-    );
-  };
-
-  const exact = results?.venues.some((v) => v.match);
-  const showLookup = lookup && lookup.query !== known?.name;
 
   return (
     <section className="card venue-panel" aria-labelledby="venue-heading">
@@ -256,188 +123,58 @@ export function VenuePanel({
         ) : known ? (
           <>
             <p className="notice success">
-              <Check size={16} aria-hidden="true" /> “{known.name}” is your venue
-              {known.kind === 'from Google Maps' ? ' — saved from Google Maps.' : '.'}
+              <Check size={16} aria-hidden="true" /> “{known.name}” is your venue.
             </p>
             <ul className="plain venue-list">
-              <VenueRow venue={known} chosen />
+              <VenueRow venue={known} />
             </ul>
           </>
-        ) : (
-          !venueName && (
-            <p className="muted">No venue yet — find a specific place, or discover places near you.</p>
-          )
-        )}
-      </div>
-
-      <form className="venue-find" onSubmit={find}>
-        <label htmlFor="venue-query">Find a specific venue</label>
-        <div className="venue-find-row">
-          <input
-            id="venue-query"
-            value={query}
-            maxLength={LIMITS.venueLinkMax}
-            placeholder="Venue name (e.g. Bubble and Tea Kolkata) or a Google Maps link"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <button type="submit" className="btn primary" disabled={looking || query.trim().length < 2}>
-            <Search size={16} aria-hidden="true" /> {looking ? 'Finding…' : 'Find'}
-          </button>
-        </div>
-      </form>
-
-      <div aria-live="polite">
-        {showLookup &&
-          (lookup.venues.length > 0 ? (
-            <>
-              <p className="hint">
-                {lookup.venues.length === 1 ? 'Is this the place?' : 'Did you mean one of these?'} Choose it
-                to make it your venue.
-              </p>
-              <ul className="plain venue-list">
-                {lookup.venues.map((v) => (
-                  <VenueRow key={v.osmUrl + v.name} venue={v} chosen={false} onChoose={() => choose(v)} />
-                ))}
-              </ul>
-            </>
-          ) : (
-            <div className={`lookup-miss${lookup.error ? ' notice warning' : ''}`}>
-              {lookup.error ? (
-                <p>{lookup.error}</p>
-              ) : (
-                <p>
-                  <strong>Pick “{lookup.query}” on Google Maps</strong> — it finds places from loose names and
-                  shows photos and reviews.
-                </p>
-              )}
-              {!isLink(lookup.query) && (
-                <ol className="lookup-steps">
-                  <li>
-                    <a
-                      className="btn small"
-                      href={googleSearch(withCity(lookup.query, city))}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <ExternalLink size={14} aria-hidden="true" /> Open “{lookup.query}” in Google Maps
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                  </li>
-                  <li>Open the right place, then tap Share → Copy link.</li>
-                  <li>
-                    <button type="button" className="btn small primary" onClick={() => void pasteLink()}>
-                      <ClipboardPaste size={14} aria-hidden="true" /> Use the copied link
-                    </button>{' '}
-                    <span className="hint">or paste it in the box above.</span>
-                  </li>
-                </ol>
-              )}
-            </div>
-          ))}
-      </div>
-
-      <hr className="venue-divider" />
-
-      <form
-        className="venue-search"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void discover();
-        }}
-      >
-        <h5 className="col-title">Discover places</h5>
-        <div className="venue-search-grid">
-          <div className="field wish">
-            <label htmlFor="venue-wish">What kind of place?</label>
-            <input
-              id="venue-wish"
-              value={wish}
-              maxLength={LIMITS.venueMax}
-              placeholder="e.g. rooftop café, garden with a banquet hall"
-              onChange={(e) => setWish(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="venue-near">Near</label>
-            <input
-              id="venue-near"
-              value={near}
-              maxLength={LIMITS.cityMax}
-              placeholder="Locality, town or PIN code"
-              onChange={(e) => setNear(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="venue-radius">Within</label>
-            <select id="venue-radius" value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))}>
-              <option value={5}>5 km</option>
-              <option value={12}>12 km</option>
-              <option value={25}>25 km</option>
-            </select>
-          </div>
-        </div>
-        <div className="venue-search-actions">
-          <button type="submit" className="btn primary" disabled={searching || near.trim().length < 2}>
-            <Search size={16} aria-hidden="true" /> {searching ? 'Searching…' : 'Find places'}
-          </button>
-          <button type="button" className="btn" disabled={searching} onClick={nearMe}>
-            <LocateFixed size={16} aria-hidden="true" /> Near me
-          </button>
-          <span className="hint">
-            {TYPE_WORDS[venueType] ? `Focusing on ${TYPE_WORDS[venueType]}. ` : ''}A PIN code gives the most
-            accurate area.
-          </span>
-        </div>
-      </form>
-
-      <div aria-live="polite">
-        {results?.area && (
-          <p className="area-note">
-            Searched around <strong>{results.area}</strong>. Not your area? Change “Near”.
+        ) : typedName ? (
+          <p className="muted">
+            Your venue: <strong>{typedName}</strong>. Add its Google Maps link to save its exact location.
           </p>
-        )}
-        {searchError && <p className="notice">{searchError}</p>}
-        {results && results.venues.length > 0 && (
-          <>
-            <p className="hint">
-              {results.wish && !exact
-                ? `No place is described as “${results.wish}” exactly — these are the closest matches. `
-                : `${results.venues.length} places, best matches first. `}
-              Open Google Maps for photos, ratings and reviews before you choose.
-            </p>
-            <div className="google-best">
-              <a className="btn small" href={results.google} target="_blank" rel="noopener noreferrer">
-                <Star size={14} aria-hidden="true" /> Top-rated on Google Maps
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
-              <button type="button" className="btn small" onClick={() => void pasteLink()}>
-                <ClipboardPaste size={14} aria-hidden="true" /> Use the copied link
-              </button>
-              <span className="hint">Like one there? Share → Copy link, then use it here.</span>
-            </div>
-            <ul className="plain venue-list">
-              {results.venues.map((v) => (
-                <VenueRow
-                  key={v.osmUrl + v.name}
-                  venue={v}
-                  chosen={v.name === venueName}
-                  onChoose={() => choose(v)}
-                />
-              ))}
-            </ul>
-          </>
+        ) : (
+          <p className="muted">No venue yet — pick one on Google Maps and paste its link here.</p>
         )}
       </div>
+
+      <ol className="lookup-steps venue-steps">
+        <li>
+          <a className="btn small" href={googleSearch(search)} target="_blank" rel="noopener noreferrer">
+            <ExternalLink size={14} aria-hidden="true" />{' '}
+            {typedName ? `Find “${typedName}” on Google Maps` : `Find ${what} near ${city} on Google Maps`}
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        </li>
+        <li>Open the place you like, then tap Share → Copy link.</li>
+        <li>
+          <form className="venue-find" onSubmit={submit}>
+            <label htmlFor="venue-link">Paste its Google Maps link</label>
+            <div className="venue-find-row">
+              <input
+                id="venue-link"
+                inputMode="url"
+                autoComplete="off"
+                value={link}
+                maxLength={LIMITS.venueLinkMax}
+                placeholder="https://maps.app.goo.gl/…"
+                onChange={(e) => setLink(e.target.value)}
+              />
+              <button type="submit" className="btn primary" disabled={reading || link.trim().length < 8}>
+                <Link2 size={16} aria-hidden="true" /> {reading ? 'Reading…' : 'Use link'}
+              </button>
+            </div>
+          </form>
+          <button type="button" className="btn small" disabled={reading} onClick={() => void pasteCopied()}>
+            <ClipboardPaste size={14} aria-hidden="true" /> Paste the copied link
+          </button>
+        </li>
+      </ol>
+
+      <div aria-live="polite">{error && <p className="notice warning">{error}</p>}</div>
       <p className="hint">
-        Venue data ©{' '}
-        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
-          OpenStreetMap contributors<span className="sr-only"> (opens in a new tab)</span>
-        </a>{' '}
-        and{' '}
-        <a href="https://overturemaps.org" target="_blank" rel="noopener noreferrer">
-          Overture Maps Foundation<span className="sr-only"> (opens in a new tab)</span>
-        </a>
-        . Prices and availability are never assumed — confirm with the venue.
+        {known ? 'To change the venue, paste another link. ' : ''}Prices and availability are never assumed —
+        confirm with the venue.
       </p>
     </section>
   );

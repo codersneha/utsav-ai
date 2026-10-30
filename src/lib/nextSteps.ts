@@ -55,7 +55,7 @@ export function nextSteps({ plan, today, timelineDone, vendors, guests, ideas }:
   }
 
   if (!details.venueName && !booked('venue')) {
-    steps.push({ id: 'venue', text: 'Find and choose a venue that matches what you want.', tab: 'vendors' });
+    steps.push({ id: 'venue', text: 'Pick a venue on Google Maps and paste its link.', tab: 'vendors' });
   }
   if (!isRestaurantVenue(details.venueType) && !booked('caterer') && daysToGo <= 120) {
     steps.push({ id: 'caterer', text: 'Shortlist caterers and compare per-plate quotes.', tab: 'vendors' });

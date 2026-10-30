@@ -500,7 +500,7 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                 id="venueName"
                 value={venueName}
                 maxLength={LIMITS.venueLinkMax}
-                placeholder="Its name (e.g. Bubble and Tea, Kolkata) or a Google Maps link"
+                placeholder="Paste its Google Maps link, or type its name"
                 onChange={(e) => setVenueName(e.target.value)}
               />
             </div>
@@ -515,7 +515,7 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                 onChange={(e) => setVenuePreference(e.target.value)}
               />
               <p id="venuePreference-hint" className="hint">
-                We use this to find the closest matches near you.
+                We open Google Maps with this search, so you can pick the place.
               </p>
             </div>
             <div className="grid-2 form-row">
