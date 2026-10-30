@@ -201,9 +201,45 @@ describe('choosing a café as the venue', () => {
     const photo = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4])], 'menu.jpg', {
       type: 'image/jpeg',
     });
-    await user.upload(within(card).getByLabelText(/Add a menu photo/), photo);
+    await user.upload(within(card).getByLabelText(/Add menu photos/), [photo, photo]);
     expect(await within(card).findByText('Paneer Tikka')).toBeInTheDocument();
     expect(within(card).getByRole('group', { name: 'Order cost' })).toHaveTextContent('₹4,000');
-    expect(sentBodies(fetchSpy).some((b) => b.mode === 'menuScan' && b.details.guests === 40)).toBe(true);
+    expect(within(card).getByText(/from 2 menu photos/)).toBeInTheDocument();
+    const scan = sentBodies(fetchSpy).find((b) => b.mode === 'menuScan');
+    expect(scan?.images).toHaveLength(2);
+    expect(scan?.details.guests).toBe(40);
+
+    // More pages keep the dishes already read.
+    await user.upload(within(card).getByLabelText(/Add more pages/), photo);
+    await vi.waitFor(() => {
+      const last = sentBodies(fetchSpy)
+        .filter((b) => b.mode === 'menuScan')
+        .at(-1);
+      expect(last?.known).toHaveLength(2);
+    });
+    expect(await within(card).findByText(/from 3 menu photos/)).toBeInTheDocument();
+  });
+});
+
+describe('a Google Maps link typed as the venue', () => {
+  it('is read automatically and becomes the venue', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
+    window.localStorage.setItem(
+      'utsav-ai:v1:details',
+      JSON.stringify({
+        ...birthdayDetails,
+        title: 'Linked party',
+        date: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        venueName: 'https://maps.app.goo.gl/SJYx7dyvRCMqE1za9',
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Linked party' });
+    await user.click(screen.getByRole('tab', { name: 'Vendors' }));
+    expect(await screen.findByText(/“Boho The Sky Cafe” is your venue/)).toBeInTheDocument();
+    expect(sentBodies(fetchSpy).some((b) => b.mode === 'venues' && b.action === 'link')).toBe(true);
+    // A café venue serves the food, so the caterer is gone.
+    expect(screen.queryByRole('group', { name: 'Caterer' })).not.toBeInTheDocument();
   });
 });

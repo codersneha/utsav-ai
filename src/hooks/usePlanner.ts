@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { askPlanner, fetchIdeas, fetchLogistics, type RefineOptions } from '../lib/api';
+import { askPlanner, fetchIdeas, fetchLogistics, venueFromMapsLink, type RefineOptions } from '../lib/api';
 import type { TradeOffAction } from '../lib/budget';
 import { describeChanges, type PlanChange } from '../lib/changes';
 import { todayIso } from '../lib/dates';
@@ -11,13 +11,14 @@ import {
   isIdeas,
   isLogistics,
   isVendorEntry,
+  isVenue,
 } from '../lib/guards';
 import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
 import { buildBudget } from '../lib/budget';
 import { venueTypeOf } from '../lib/checklist';
 import { buildPlan } from '../lib/plan';
 import { readSharedPlan } from '../lib/share';
-import { isBoolean, isNumber, isRecordOf, isString, saveJson } from '../lib/storage';
+import { isBoolean, isNumber, isRecordOf, isString } from '../lib/storage';
 import { validateEventDetails } from '../lib/validation';
 import type {
   ChatTurn,
@@ -137,6 +138,12 @@ export function usePlanner() {
   const [vendors, setVendors] = usePersistentState<VendorEntry[]>('vendors', [], isArrayOf(isVendorEntry));
   const [guests, setGuests] = usePersistentState<GuestEntry[]>('guests', [], isArrayOf(isGuestEntry));
   const [budgetLocks, setBudgetLocks] = usePersistentState<string[]>('budgetLocks', [], isArrayOf(isString));
+  const [chosenVenue, setChosenVenue] = usePersistentState<Venue | null>(
+    'venueLink',
+    null,
+    (v): v is Venue | null => v === null || isVenue(v),
+  );
+  const [venueLinkError, setVenueLinkError] = useState('');
   const [chat, setChat] = usePersistentState<ChatTurn[]>('chat', [], isArrayOf(isChatTurn));
   const [asking, setAsking] = useState(false);
   const [busySection, setBusySection] = useState<IdeasSection | null>(null);
@@ -345,13 +352,69 @@ export function usePlanner() {
     setVendors([]);
     setGuests([]);
     setBudgetLocks([]);
-    saveJson('venueLink', null);
+    setChosenVenue(null);
     setChat([]);
     setChange(null);
     setHistory([]);
   };
 
   const toggle = (setter: typeof setDone) => (id: string) => setter((d) => ({ ...d, [id]: !d[id] }));
+
+  /** Makes a venue the plan's venue and records it in the Venue vendor row. */
+  const chooseVenue = (venue: Venue) => {
+    if (!details) return;
+    setChosenVenue(venue);
+    setVenueLinkError('');
+    setVendors((list) => {
+      const others = list.map((e) =>
+        e.groupId === 'venue' && e.status === 'pending' && e.name !== venue.name
+          ? { ...e, status: 'shortlisted' as const }
+          : e,
+      );
+      const existing = others.find((e) => e.groupId === 'venue' && e.name === venue.name);
+      if (existing) return others.map((e) => (e === existing ? { ...e, status: 'pending' as const } : e));
+      return [
+        ...others,
+        {
+          id: newId('vendor'),
+          groupId: 'venue',
+          name: venue.name,
+          contact: '',
+          address: venue.address,
+          mapsUrl: venue.mapsUrl,
+          notes: 'Chosen as the venue — confirm the booking and update the status.',
+          quote: 0,
+          status: 'pending' as const,
+        },
+      ];
+    });
+    submit({
+      ...details,
+      venueName: venue.name,
+      venueType: venueTypeOf(venue.kind, venue.name) ?? details.venueType,
+    });
+  };
+  // The link reader below needs the latest chooseVenue without re-running.
+  const chooseVenueRef = useRef(chooseVenue);
+  useEffect(() => {
+    chooseVenueRef.current = chooseVenue;
+  });
+
+  // A Google Maps link typed as the venue (e.g. in the form) is read automatically.
+  const venueLink = details && /^https?:\/\//i.test(details.venueName) ? details.venueName : '';
+  useEffect(() => {
+    if (!venueLink) return;
+    let active = true;
+    void venueFromMapsLink(venueLink).then((r) => {
+      if (!active) return;
+      const venue = r.venues[0];
+      if (venue) chooseVenueRef.current(venue);
+      else setVenueLinkError(r.error ?? 'We couldn’t read that Google Maps link.');
+    });
+    return () => {
+      active = false;
+    };
+  }, [venueLink]);
 
   return {
     details,
@@ -365,38 +428,9 @@ export function usePlanner() {
     undo,
     shared: { details: shared, open: openShared, dismiss: dismissShared },
     applyLook,
-    /** Makes a venue from the map the plan's venue and records it in the Venue vendor row. */
-    chooseVenue: (venue: Venue) => {
-      if (!details) return;
-      setVendors((list) => {
-        const others = list.map((e) =>
-          e.groupId === 'venue' && e.status === 'pending' && e.name !== venue.name
-            ? { ...e, status: 'shortlisted' as const }
-            : e,
-        );
-        const existing = others.find((e) => e.groupId === 'venue' && e.name === venue.name);
-        if (existing) return others.map((e) => (e === existing ? { ...e, status: 'pending' as const } : e));
-        return [
-          ...others,
-          {
-            id: newId('vendor'),
-            groupId: 'venue',
-            name: venue.name,
-            contact: '',
-            address: venue.address,
-            mapsUrl: venue.mapsUrl,
-            notes: 'Chosen as the venue — confirm the booking and update the status.',
-            quote: 0,
-            status: 'pending' as const,
-          },
-        ];
-      });
-      submit({
-        ...details,
-        venueName: venue.name,
-        venueType: venueTypeOf(venue.kind, venue.name) ?? details.venueType,
-      });
-    },
+    chooseVenue,
+    chosenVenue,
+    venueLinkError,
     ideas: { ...ideas, regenerate: regenerateIdeas, refine: refineIdeas, refreshSection, busySection },
     logistics,
     budget: {

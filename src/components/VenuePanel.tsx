@@ -1,8 +1,6 @@
 import { Building2, Check, MapPin, Search } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
-import { usePersistentState } from '../hooks/usePersistentState';
 import { checkVenue, findVenues, venueFromMapsLink } from '../lib/api';
-import { isVenue } from '../lib/guards';
 import { LIMITS } from '../lib/validation';
 import type { Venue, VenueType } from '../types';
 
@@ -13,6 +11,10 @@ interface Props {
   /** The user's own description of the place they want. */
   preference: string;
   onChoose: (venue: Venue) => void;
+  /** The venue chosen so far (from a search or a Google Maps link). */
+  chosen: Venue | null;
+  /** Why a Google Maps link typed as the venue couldn't be read. */
+  resolveError?: string;
 }
 
 const TYPE_WORDS: Partial<Record<VenueType, string>> = {
@@ -70,13 +72,17 @@ function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; 
   );
 }
 
-const isNullableVenue = (v: unknown): v is Venue | null => v === null || isVenue(v);
-
 /** Checks the booked venue, takes a Google Maps link, or finds the closest matches to what the user wants. */
-export function VenuePanel({ city, venueName, venueType, preference, onChoose }: Props) {
+export function VenuePanel({
+  city,
+  venueName,
+  venueType,
+  preference,
+  onChoose,
+  chosen,
+  resolveError,
+}: Props) {
   const [lookup, setLookup] = useState<{ key: string; venues: Venue[]; error?: string } | null>(null);
-  // The chosen venue — from a search or a Google Maps link (many local venues are not on the open map).
-  const [linked, setLinked] = usePersistentState<Venue | null>('venueLink', null, isNullableVenue);
   const [link, setLink] = useState('');
   const [linkError, setLinkError] = useState('');
   const [wish, setWish] = useState(preference);
@@ -86,11 +92,13 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   // A venue we already know (chosen from a search or saved from a link) needs no lookup.
-  const known = linked?.name === venueName ? linked : undefined;
+  const known = chosen?.name === venueName ? chosen : undefined;
+  // A Google Maps link typed as the venue is being read by the planner.
+  const isLink = /^https?:\/\//i.test(venueName);
   const key = `${venueName}|${city}`;
 
   useEffect(() => {
-    if (!venueName || known) return;
+    if (!venueName || known || isLink) return;
     let active = true;
     void checkVenue(venueName, city).then((r) => {
       if (active) setLookup({ key: `${venueName}|${city}`, ...r });
@@ -98,7 +106,7 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
     return () => {
       active = false;
     };
-  }, [venueName, city, known]);
+  }, [venueName, city, known, isLink]);
 
   const check: { venues: Venue[]; error?: string } | null = known
     ? { venues: [known] }
@@ -134,7 +142,6 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
 
   /** Saves the venue, clears the search and hands it to the plan. */
   const choose = (venue: Venue) => {
-    setLinked(venue);
     setResults(null);
     setSearchError('');
     onChoose(venue);
@@ -150,7 +157,13 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
       </h4>
 
       <div aria-live="polite">
-        {venueName ? (
+        {isLink ? (
+          resolveError ? (
+            <p className="notice warning">{resolveError}</p>
+          ) : (
+            <p className="muted">Reading your Google Maps link…</p>
+          )
+        ) : venueName ? (
           !check ? (
             <p className="muted">Looking up “{venueName}”…</p>
           ) : check.venues.length > 0 ? (

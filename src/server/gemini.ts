@@ -18,6 +18,8 @@ export interface GeminiRequest {
   responseSchema?: unknown;
   /** Optional photo to look at (base64, already validated). */
   image?: { data: string; mimeType: string };
+  /** Several photos at once, e.g. the pages of a menu. */
+  images?: { data: string; mimeType: string }[];
   temperature?: number;
   maxOutputTokens?: number;
 }
@@ -98,9 +100,12 @@ async function attemptGenerate(
     contents: [
       {
         role: 'user',
-        parts: req.image
-          ? [{ inlineData: { mimeType: req.image.mimeType, data: req.image.data } }, { text: req.prompt }]
-          : [{ text: req.prompt }],
+        parts: [
+          ...[...(req.image ? [req.image] : []), ...(req.images ?? [])].map((img) => ({
+            inlineData: { mimeType: img.mimeType, data: img.data },
+          })),
+          { text: req.prompt },
+        ],
       },
     ],
     generationConfig: {

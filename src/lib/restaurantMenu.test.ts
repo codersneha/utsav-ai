@@ -39,6 +39,21 @@ describe('parsePartyOrder', () => {
     expect(order?.lines.every((l) => l.quantity >= 1 && l.cost === l.quantity * l.price)).toBe(true);
   });
 
+  it('keeps dishes read from earlier pages and counts the pages', () => {
+    const known = [{ name: 'Gulab Jamun', category: 'dessert' as const, veg: true, price: 120, serves: 1 }];
+    const order = parsePartyOrder(
+      { ...read, order: [...read.order, { name: 'Gulab Jamun', quantity: 15 }] },
+      15,
+      100_000,
+      known,
+      3,
+    );
+    expect(order?.itemsRead).toBe(4);
+    expect(order?.pages).toBe(3);
+    expect(order?.lines.map((l) => l.name)).toContain('Gulab Jamun');
+    expect(buildMenuScanPrompt(birthdayDetails, 9000, known)).toContain('ALREADY_READ');
+  });
+
   it('returns null when no menu was read', () => {
     expect(parsePartyOrder({ items: [], order: [], note: 'Not a menu' }, 10, 5000)).toBeNull();
     expect(parsePartyOrder('nonsense', 10, 5000)).toBeNull();

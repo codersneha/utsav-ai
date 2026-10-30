@@ -2,6 +2,7 @@ import type {
   ChangeProposal,
   ChatTurn,
   EventDetails,
+  MenuItem,
   PartyOrder,
   Ideas,
   IdeasSection,
@@ -267,28 +268,29 @@ export interface MenuScanResult {
   error?: string;
 }
 
-/** Reads a restaurant menu photo and plans the party order within the food budget. */
+/**
+ * Reads the pages of a restaurant menu (several photos at once) and plans the
+ * party order within the food budget. Dishes read earlier can be passed in so
+ * more pages can be added later without re-sending old photos.
+ */
 export async function scanMenu(
   details: EventDetails,
-  image: PreparedImage,
+  images: PreparedImage[],
   budget: number,
+  known: MenuItem[] = [],
 ): Promise<MenuScanResult> {
   try {
-    const res = await postJson({
-      mode: 'menuScan',
-      details,
-      image: image.data,
-      mimeType: image.mimeType,
-      budget,
-    });
+    const res = await postJson({ mode: 'menuScan', details, images, budget, known });
     if (!res.ok) {
       return {
         error:
           res.status === 503
             ? 'AI is not configured here, so menus cannot be read.'
-            : res.status === 502
-              ? 'We couldn’t read a menu with prices in that photo — try a clearer, closer photo.'
-              : 'Could not read that menu just now — please try again.',
+            : res.status === 413
+              ? 'Those photos are too large together — add up to 8 pages at a time.'
+              : res.status === 502
+                ? 'We couldn’t read a menu with prices in those photos — try clearer, closer photos.'
+                : 'Could not read that menu just now — please try again.',
       };
     }
     const data = (await res.json()) as { order?: unknown };

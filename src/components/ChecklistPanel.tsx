@@ -87,6 +87,8 @@ interface Props {
   venueType: VenueType;
   venuePreference: string;
   onChooseVenue: (venue: Venue) => void;
+  chosenVenue: Venue | null;
+  venueLinkError?: string;
   budget: BudgetPlan;
   done: Record<string, boolean>;
   onToggle: (id: string) => void;
@@ -147,6 +149,8 @@ export function ChecklistPanel(props: Props) {
         venueType={props.venueType}
         preference={props.venuePreference}
         onChoose={props.onChooseVenue}
+        chosen={props.chosenVenue}
+        resolveError={props.venueLinkError}
       />
 
       <ul className="vendor-list" aria-label="Vendor categories">

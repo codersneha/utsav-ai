@@ -501,12 +501,12 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                 </p>
               </div>
               <div className="field">
-                <label htmlFor="venueName">Venue name, if booked</label>
+                <label htmlFor="venueName">Venue name or Google Maps link, if booked</label>
                 <input
                   id="venueName"
                   value={venueName}
-                  maxLength={LIMITS.venueMax}
-                  placeholder="We can check it on the map"
+                  maxLength={LIMITS.venueLinkMax}
+                  placeholder="e.g. Shibaloy Garden, or paste its maps.app.goo.gl link"
                   onChange={(e) => setVenueName(e.target.value)}
                 />
               </div>

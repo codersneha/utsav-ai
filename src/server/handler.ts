@@ -15,6 +15,7 @@ import { IDEAS_SCHEMAS, parseIdeas } from '../lib/ideas.js';
 import {
   MENU_SCAN_SCHEMA,
   buildMenuScanPrompt,
+  cleanMenuItems,
   parsePartyOrder,
   partyFoodBudget,
 } from '../lib/restaurantMenu.js';
@@ -28,7 +29,7 @@ import {
   type Refinement,
 } from '../lib/prompts.js';
 import { LIMITS, cleanText, isVenueType, validateEventDetails } from '../lib/validation.js';
-import type { ChatTurn, EventDetails, IdeasSection, Venue } from '../types.js';
+import type { ChatTurn, EventDetails, IdeasSection, MenuItem, Venue } from '../types.js';
 import { DEFAULT_MODEL, GeminiError, generateText, type GeminiRequest } from './gemini.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
 import {
@@ -41,8 +42,11 @@ import {
 } from './venues.js';
 
 export const MAX_BODY_BYTES = 16 * 1024;
-/** Photo uploads are resized in the browser to ~200 KB; this leaves generous headroom. */
-export const MAX_IMAGE_BODY_BYTES = 2_000_000;
+/** Photo uploads are resized in the browser; up to 8 menu pages fit under Vercel's 4.5 MB limit. */
+export const MAX_IMAGE_BODY_BYTES = 4_200_000;
+/** One photo, base64-encoded. */
+const MAX_PHOTO_CHARS = 1_500_000;
+const MAX_MENU_PAGES = 8;
 const MAX_HISTORY = 4;
 const SECTIONS: IdeasSection[] = ['decor', 'menu', 'extras'];
 
@@ -87,7 +91,13 @@ type Job =
   | { mode: 'venues' }
   | { mode: 'extract'; description: string; today: string }
   | { mode: 'vision'; image: { data: string; mimeType: string } }
-  | { mode: 'menuScan'; details: EventDetails; image: { data: string; mimeType: string }; budget: number }
+  | {
+      mode: 'menuScan';
+      details: EventDetails;
+      images: { data: string; mimeType: string }[];
+      known: MenuItem[];
+      budget: number;
+    }
   | { mode: 'ideas'; details: EventDetails; refinement?: Refinement; section?: IdeasSection }
   | { mode: 'logistics'; details: EventDetails }
   | { mode: 'ask'; details: EventDetails; question: string; history: ChatTurn[]; today: string };
@@ -116,17 +126,18 @@ function parseJob(payload: Record<string, unknown>, today: string): Job | { erro
 
   switch (payload.mode) {
     case 'menuScan': {
-      if (!isValidImage(payload.image, payload.mimeType, MAX_IMAGE_BODY_BYTES))
-        return { error: 'Invalid image' };
+      const photos = Array.isArray(payload.images) ? payload.images : [];
+      if (photos.length < 1 || photos.length > MAX_MENU_PAGES) return { error: 'Add 1 to 8 menu photos' };
+      const images: { data: string; mimeType: string }[] = [];
+      for (const p of photos) {
+        const photo = (p ?? {}) as Record<string, unknown>;
+        if (!isValidImage(photo.data, photo.mimeType, MAX_PHOTO_CHARS)) return { error: 'Invalid image' };
+        images.push({ data: photo.data, mimeType: photo.mimeType as string });
+      }
       const given = Math.round(Number(payload.budget));
       const budget =
         Number.isFinite(given) && given > 0 ? Math.min(given, details.budget) : partyFoodBudget(details);
-      return {
-        mode: 'menuScan',
-        details,
-        image: { data: payload.image, mimeType: payload.mimeType as string },
-        budget,
-      };
+      return { mode: 'menuScan', details, images, known: cleanMenuItems(payload.known), budget };
     }
     case 'ideas': {
       const section = SECTIONS.find((x) => x === payload.section);
@@ -201,15 +212,15 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
       const text = await generateText(
         {
           ...base,
-          prompt: buildMenuScanPrompt(job.details, job.budget),
-          image: job.image,
+          prompt: buildMenuScanPrompt(job.details, job.budget, job.known),
+          images: job.images,
           responseSchema: MENU_SCAN_SCHEMA,
           temperature: 0.2,
           maxOutputTokens: 8192,
         },
         fetchImpl,
       );
-      const order = parsePartyOrder(text, job.details.guests, job.budget);
+      const order = parsePartyOrder(text, job.details.guests, job.budget, job.known, job.images.length);
       return order ? { order } : null;
     }
     case 'vision': {

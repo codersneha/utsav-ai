@@ -2256,6 +2256,12 @@ ul.plain {
   padding-left: 1.2rem;
 }
 
+.menu-upload {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .menu-steps a {
   display: inline-flex;
   align-items: center;

@@ -285,8 +285,8 @@ export interface GuestEntry {
 export const MENU_CATEGORIES = ['starter', 'main', 'bread', 'rice', 'dessert', 'drink', 'other'] as const;
 export type MenuCategory = (typeof MENU_CATEGORIES)[number];
 
-/** One line of a party order planned from a restaurant's own menu. */
-export interface PartyOrderLine {
+/** A dish read from a restaurant's menu. */
+export interface MenuItem {
   name: string;
   category: MenuCategory;
   veg: boolean;
@@ -294,6 +294,10 @@ export interface PartyOrderLine {
   price: number;
   /** How many people one order typically feeds. */
   serves: number;
+}
+
+/** One line of a party order planned from a restaurant's own menu. */
+export interface PartyOrderLine extends MenuItem {
   quantity: number;
   /** quantity × price, computed in code. */
   cost: number;
@@ -303,6 +307,10 @@ export interface PartyOrderLine {
 export interface PartyOrder {
   /** How many dishes were read from the menu. */
   itemsRead: number;
+  /** Every dish read so far, so more menu pages can be added later. */
+  items: MenuItem[];
+  /** Menu photos read so far. */
+  pages: number;
   lines: PartyOrderLine[];
   /** Sum of the lines (before taxes and service charge). */
   total: number;

@@ -3,6 +3,8 @@
 export const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const MAX_SOURCE_BYTES = 15 * 1024 * 1024;
 const MAX_EDGE = 1024;
+/** Menus need sharper images so small prices stay readable. */
+export const MENU_EDGE = 1400;
 
 export interface PreparedImage {
   /** Base64 without the data: prefix. */
@@ -19,7 +21,7 @@ const readAsBase64 = (blob: Blob) =>
   });
 
 /** Validates and downsizes a photo to at most 1024px as JPEG. Throws a friendly message on bad input. */
-export async function prepareImage(file: File): Promise<PreparedImage> {
+export async function prepareImage(file: File, maxEdge = MAX_EDGE): Promise<PreparedImage> {
   if (!(ACCEPTED_TYPES as readonly string[]).includes(file.type)) {
     throw new Error('Please choose a JPG, PNG or WebP photo.');
   }
@@ -28,7 +30,7 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
   if (typeof createImageBitmap === 'function' && typeof document !== 'undefined') {
     try {
       const bitmap = await createImageBitmap(file);
-      const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+      const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(bitmap.width * scale);
       canvas.height = Math.round(bitmap.height * scale);

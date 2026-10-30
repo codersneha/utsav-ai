@@ -24,6 +24,8 @@ export const LIMITS = {
   questionMax: 300,
   refinementMax: 200,
   venueMax: 100,
+  /** A pasted Google Maps link can be long. */
+  venueLinkMax: 600,
   describeMin: 10,
   describeMax: 600,
   guestsMin: 1,
@@ -80,6 +82,12 @@ function validCeremonies(raw: Record<string, unknown>, eventType: EventType): st
  * Validates untrusted event input. The same function guards the form in the
  * browser and the API on the server, so both enforce identical rules.
  */
+/** A venue name, or a pasted Google Maps link (kept whole so it can be read). */
+function venueNameOf(value: unknown): string {
+  const text = cleanText(value, LIMITS.venueLinkMax);
+  return /^https?:\/\//i.test(text) ? text : text.slice(0, LIMITS.venueMax).trim();
+}
+
 export function validateEventDetails(input: unknown, today: string): ValidationResult<EventDetails> {
   const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
   const errors: FieldErrors = {};
@@ -132,7 +140,7 @@ export function validateEventDetails(input: unknown, today: string): ValidationR
       language: isLanguage(raw.language) ? raw.language : 'en',
       tradition: isTradition(raw.tradition) ? raw.tradition : 'modern',
       ceremonies: validCeremonies(raw, eventType as EventType),
-      venueName: cleanText(raw.venueName, LIMITS.venueMax),
+      venueName: venueNameOf(raw.venueName),
       venuePreference: cleanText(raw.venuePreference, LIMITS.venueMax),
     },
   };

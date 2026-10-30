@@ -387,3 +387,38 @@ describe('handleGenerate — sections, photos and venues', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('handleGenerate — restaurant menu photos', () => {
+  const JPEG = btoa('\xff\xd8\xff\xe0' + 'x'.repeat(40));
+  const page = { data: JPEG, mimeType: 'image/jpeg' };
+
+  it('reads several pages in one request and prices the order in code', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      geminiResponse(
+        JSON.stringify({
+          items: [{ name: 'Cold Coffee', category: 'drink', price: 160, veg: true, serves: 1 }],
+          order: [{ name: 'Cold Coffee', quantity: 10 }],
+          note: 'Taxes extra.',
+        }),
+      ),
+    );
+    const res = await handleGenerate(
+      post({ mode: 'menuScan', details: weddingDetails, images: [page, page, page], budget: 50_000 }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect(res.status).toBe(200);
+    const { order } = await res.json();
+    expect(order.total).toBe(1600);
+    expect(order.pages).toBe(3);
+    const parts = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).contents[0].parts;
+    expect(parts.filter((p: { inlineData?: unknown }) => p.inlineData)).toHaveLength(3);
+  });
+
+  it('rejects no pages, too many pages and files that are not images', async () => {
+    const send = (images: unknown) =>
+      handleGenerate(post({ mode: 'menuScan', details: weddingDetails, images }), deps());
+    expect((await send([])).status).toBe(400);
+    expect((await send(Array(9).fill(page))).status).toBe(400);
+    expect((await send([{ data: btoa('not an image at all!!'), mimeType: 'image/jpeg' }])).status).toBe(400);
+  });
+});

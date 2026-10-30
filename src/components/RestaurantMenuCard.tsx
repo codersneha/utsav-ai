@@ -1,9 +1,9 @@
-import { ExternalLink, ScanLine } from 'lucide-react';
+import { ExternalLink, ImagePlus, ScanLine } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { scanMenu } from '../lib/api';
 import { isPartyOrder } from '../lib/guards';
-import { ACCEPTED_TYPES, prepareImage } from '../lib/image';
+import { ACCEPTED_TYPES, MENU_EDGE, prepareImage } from '../lib/image';
 import { formatInr } from '../lib/plan';
 import { partyFoodBudget } from '../lib/restaurantMenu';
 import type { EventDetails, PartyOrder } from '../types';
@@ -13,6 +13,8 @@ interface Props {
   /** The planned catering amount (the user's own figure if edited). */
   catering?: number;
 }
+
+const MAX_PAGES = 8;
 
 interface Saved {
   venue: string;
@@ -46,16 +48,22 @@ export function RestaurantMenuCard({ details, catering }: Props) {
   const [error, setError] = useState('');
   const order = saved && saved.venue === venue ? saved.order : null;
 
-  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  /** Reads all chosen pages at once; "more pages" keeps the dishes already read. */
+  const onFiles = async (e: ChangeEvent<HTMLInputElement>, more: boolean) => {
+    const files = [...(e.target.files ?? [])];
     e.target.value = '';
-    if (!file) return;
+    if (files.length === 0) return;
+    if (files.length > MAX_PAGES) return setError(`Choose up to ${MAX_PAGES} menu photos at a time.`);
     setError('');
     setBusy(true);
     try {
-      const result = await scanMenu(details, await prepareImage(file), budget);
-      if (result.order) setSaved({ venue, order: result.order });
-      else setError(result.error ?? 'We couldn’t read that menu.');
+      const images = await Promise.all(files.map((f) => prepareImage(f, MENU_EDGE)));
+      const known = more && order ? order.items : [];
+      const result = await scanMenu(details, images, budget, known);
+      if (result.order) {
+        const pages = (more && order ? order.pages : 0) + images.length;
+        setSaved({ venue, order: { ...result.order, pages } });
+      } else setError(result.error ?? 'We couldn’t read that menu.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'We couldn’t read that menu.');
     } finally {
@@ -77,29 +85,49 @@ export function RestaurantMenuCard({ details, catering }: Props) {
         {venue ? `Party order from ${venue}’s menu` : 'Party order from the restaurant’s menu'}
       </h4>
       <p className="muted small">
-        At a restaurant or café the food comes from its own menu — no separate caterer. Add a photo of the
-        menu and we’ll plan what to order for {details.guests} guests within your food budget of{' '}
-        {formatInr(budget)}.
+        At a restaurant or café the food comes from its own menu — no separate caterer. Add the menu pages and
+        we’ll read every dish and price, then plan what to order for {details.guests} guests within your food
+        budget of {formatInr(budget)}.
       </p>
       <ol className="menu-steps">
         <li>
           <a href={menuSearch} target="_blank" rel="noopener noreferrer">
             Open {venue || 'the restaurant'} on Google Maps <ExternalLink size={14} aria-hidden="true" />
             <span className="sr-only"> (opens in a new tab)</span>
-          </a>{' '}
-          and screenshot the <strong>Menu</strong> photos — or photograph the printed menu.
+          </a>
+          , then open <strong>Menu</strong> and screenshot each page — or photograph the printed menu.
         </li>
         <li>
-          <label className="btn upload-btn">
-            <ScanLine size={18} aria-hidden="true" /> {busy ? 'Reading the menu…' : 'Add a menu photo'}
-            <input
-              type="file"
-              accept={ACCEPTED_TYPES.join(',')}
-              className="sr-only"
-              onChange={(e) => void onFile(e)}
-              disabled={busy}
-            />
-          </label>
+          <div className="menu-upload">
+            <label className="btn primary upload-btn">
+              <ScanLine size={18} aria-hidden="true" />{' '}
+              {busy ? 'Reading the menu…' : order ? 'Read a new menu' : 'Add menu photos'}
+              <input
+                type="file"
+                multiple
+                accept={ACCEPTED_TYPES.join(',')}
+                className="sr-only"
+                onChange={(e) => void onFiles(e, false)}
+                disabled={busy}
+              />
+            </label>
+            {order && (
+              <label className="btn upload-btn">
+                <ImagePlus size={18} aria-hidden="true" /> Add more pages
+                <input
+                  type="file"
+                  multiple
+                  accept={ACCEPTED_TYPES.join(',')}
+                  className="sr-only"
+                  onChange={(e) => void onFiles(e, true)}
+                  disabled={busy}
+                />
+              </label>
+            )}
+          </div>
+          <p className="hint">
+            Select all the pages at once — up to {MAX_PAGES} photos. Photos are not stored.
+          </p>
         </li>
       </ol>
 
@@ -160,7 +188,7 @@ export function RestaurantMenuCard({ details, catering }: Props) {
               </table>
             </div>
             <p className="hint">
-              Read {order.itemsRead} dishes from the menu.
+              Read {order.itemsRead} dishes from {order.pages} menu {order.pages === 1 ? 'photo' : 'photos'}.
               {order.trimmed ? ' Quantities were reduced to fit your budget.' : ''} {order.note} Prices are as
               printed; check taxes and the service charge with the restaurant.
             </p>

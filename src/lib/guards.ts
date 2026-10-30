@@ -151,6 +151,9 @@ const isCount2 = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && 
 export const isPartyOrder = (v: unknown): v is PartyOrder =>
   isObject(v) &&
   isCount2(v.itemsRead) &&
+  isCount2(v.pages) &&
+  Array.isArray(v.items) &&
+  v.items.every((i) => isObject(i) && isString(i.name) && isCount2(i.price)) &&
   isCount2(v.total) &&
   isCount2(v.perHead) &&
   isCount2(v.guests) &&

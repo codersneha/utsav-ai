@@ -175,6 +175,8 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           venueType={details.venueType}
           venuePreference={details.venuePreference}
           onChooseVenue={planner.chooseVenue}
+          chosenVenue={planner.chosenVenue}
+          venueLinkError={planner.venueLinkError}
           budget={plan.budget}
           done={planner.checklist.done}
           onToggle={planner.checklist.toggle}

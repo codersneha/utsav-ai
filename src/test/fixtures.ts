@@ -112,7 +112,12 @@ export const sampleVenue = {
 };
 
 export const sampleOrder = {
-  itemsRead: 12,
+  itemsRead: 2,
+  items: [
+    { name: 'Paneer Tikka', category: 'starter', veg: true, price: 320, serves: 2 },
+    { name: 'Cold Coffee', category: 'drink', veg: true, price: 160, serves: 1 },
+  ],
+  pages: 1,
   lines: [
     { name: 'Paneer Tikka', category: 'starter', veg: true, price: 320, serves: 2, quantity: 5, cost: 1600 },
     { name: 'Cold Coffee', category: 'drink', veg: true, price: 160, serves: 1, quantity: 15, cost: 2400 },
@@ -143,7 +148,14 @@ export function apiResponder(answer = 'Book the venue first.') {
     if (body.mode === 'extract') {
       payload = { extracted: { eventType: 'wedding', city: 'Lucknow', guests: 250, budget: 1_800_000 } };
     } else if (body.mode === 'venues') {
-      payload = { venues: body.action === 'search' ? [sampleVenue] : [] };
+      payload = {
+        venues:
+          body.action === 'search'
+            ? [sampleVenue]
+            : body.action === 'link'
+              ? [{ ...sampleVenue, name: 'Boho The Sky Cafe', kind: 'from Google Maps', address: '' }]
+              : [],
+      };
     } else if (body.mode === 'menuScan') {
       payload = { order: sampleOrder };
     } else if (body.mode === 'vision') {
