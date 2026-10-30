@@ -43,8 +43,6 @@ export default defineConfig(({ mode }) => {
       setupFiles: ['./src/test/setup.ts'],
       css: false,
       testTimeout: 30_000,
-      // A small offline venue index, so tests never depend on the real data.
-      env: { PLACES_DIR: 'src/test/places' },
       coverage: {
         provider: 'v8',
         include: ['src/**/*.{ts,tsx}', 'api/**/*.ts'],

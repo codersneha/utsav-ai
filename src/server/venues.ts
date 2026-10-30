@@ -1,10 +1,8 @@
 import type { Venue, VenueType } from '../types.js';
 import { cleanText } from '../lib/validation.js';
-import { placesNear, type PlaceRow, type TileLoader } from './places.js';
 
 /**
- * Venue lookups from an offline Overture Maps index (see places.ts) and
- * OpenStreetMap via Nominatim (free, no API key). Kept behind small
+ * Venue lookups from OpenStreetMap via Nominatim (free, no API key). Kept behind small
  * functions so a richer provider (e.g. Google Places with ratings and photos)
  * can replace it later without touching the UI.
  * Usage policy: identify ourselves, keep request rates low, cache results.
@@ -293,24 +291,12 @@ export async function checkVenue(
   fetchImpl: typeof fetch = fetch,
   pause: (ms: number) => Promise<unknown> = wait,
   placesKey?: string,
-  tiles?: TileLoader,
 ): Promise<Venue[]> {
   const core = coreName(name, city);
   const near = await geocodeCity(city, fetchImpl).catch(() => null);
   if (placesKey) {
     const found = await googleTextSearch(`${core} ${city}`, near, placesKey, fetchImpl);
     if (found.length > 0) return rankMatches(found, core, near);
-  }
-  // The offline index knows many small places the open map lacks, and answers instantly.
-  if (near) {
-    const indexed = rankMatches(
-      likelyNames(await placesNear(near.lat, near.lon, MAX_VENUE_KM, tiles), core).map((r) =>
-        fromRow(r, city),
-      ),
-      core,
-      near,
-    );
-    if (indexed.length > 0) return indexed;
   }
   const nominatim = (q: string) =>
     getJson(`${NOMINATIM}?format=jsonv2&limit=8&countrycodes=in&q=${encodeURIComponent(q)}`, fetchImpl).then(
@@ -339,32 +325,6 @@ export async function checkVenue(
     pool.push(...(await photonSearch(key, city, near, fetchImpl)));
   }
   return rankMatches(pool, core, near);
-}
-
-/** A venue from the offline index; the Google Maps link searches its name and street. */
-function fromRow([name, kind, lat, lon, address]: PlaceRow, city: string): Venue {
-  return {
-    name,
-    kind,
-    address,
-    lat,
-    lon,
-    mapsUrl: mapsSearch(name, address ? `${address}, ${city}` : city),
-    osmUrl: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=18/${lat}/${lon}`,
-  };
-}
-
-/** Quick filter before fuzzy scoring: a name word must start like one of the typed words. */
-function likelyNames(rows: PlaceRow[], typed: string): PlaceRow[] {
-  const starts = [
-    ...new Set(
-      words(typed)
-        .filter((w) => w.length >= 3)
-        .map((w) => soundKey(w).slice(0, 3)),
-    ),
-  ];
-  if (starts.length === 0) return [];
-  return rows.filter(([name]) => words(name).some((w) => starts.includes(soundKey(w).slice(0, 3))));
 }
 
 /** Keeps good matches near the event city, best and closest first, without duplicates. */
@@ -659,89 +619,6 @@ export interface VenueSearch {
   radiusKm?: number;
   /** Google Places key — when set, results are Google's, ranked like "best … near me". */
   placesKey?: string;
-  /** Where the offline index's tiles come from (tests pass their own). */
-  tiles?: TileLoader;
-}
-
-/** Close cousins of a venue type: they fit, but less than the real thing. */
-const NEAR_KINDS: Partial<Record<VenueType, RegExp>> = {
-  cafe: /dessert|bakery|juice|ice cream|patisserie|smoothie|tea|bistro/,
-  restaurant: /eatery|food court|lounge/,
-  hotel: /guest house|lodging|bed and breakfast/,
-};
-
-/** Names that say what a place is, when it is filed under another kind ("Out n Beyond Cafe & Bistro"). */
-const NAME_KINDS: Partial<Record<VenueType, RegExp>> = {
-  cafe: /^(?!.*\b(internet|cyber|billiards?|snooker|gaming)\b).*(\bcaf[eé]\b|coffee|bistro|teafe)/i,
-  restaurant: /restaurant|dhaba|kitchen|grill|diner|bistro/i,
-  hotel: /\bhotel\b|resort|\binn\b/i,
-};
-
-/** Venue types where a name like "… Banquet" or "… Marriage Hall" is itself a good fit. */
-const HALL_TYPES = new Set<VenueType>(['undecided', 'home', 'banquet', 'community-hall', 'temple']);
-
-/** Which listed kinds of place suit each venue type. */
-const TYPE_KINDS: Record<VenueType, RegExp> = {
-  undecided: /banquet|wedding|event venue|events venue|party|convention|community|resort/,
-  home: /banquet|wedding|event|party|community|restaurant/,
-  banquet: /banquet|wedding|event venue|events venue|party|convention|marriage/,
-  outdoor: /park|garden|lawn|farm|resort|fairground|event venue|festival/,
-  'community-hall': /community|event venue|banquet|marriage|convention/,
-  temple: /marriage|banquet|wedding|community|event venue/,
-  restaurant: /restaurant|eatery|dining|diner|bistro|grill|bar|pub|brewery|food court|buffet/,
-  cafe: /caf|coffee|bubble tea/,
-  hotel: /hotel|resort|lodging|inn|guest house|motel|bed and breakfast/,
-  office: /convention|conference|hotel|event venue|coworking|business center/,
-};
-
-/**
- * "Best … near" from the offline index: places that fit the venue type and the
- * user's words, well-established listings first, then nearer ones.
- */
-async function indexedVenues(
-  area: Area,
-  city: string,
-  venueType: VenueType,
-  preference: string,
-  radiusKm: number,
-  tiles?: TileLoader,
-): Promise<Venue[]> {
-  // Whole words only, so "garden" doesn't match "Hotel Gardenia" (but "roof" matches "Rooftop").
-  const wanted = preferenceWords(preference).map((w) => ({
-    w,
-    re: new RegExp(`\\b${w.replace(/[^a-z0-9]/g, '')}(s|es|top|tops)?\\b`),
-  }));
-  const fits = TYPE_KINDS[venueType];
-  const scored: (Venue & { score: number })[] = [];
-  for (const row of await placesNear(area.lat, area.lon, radiusKm, tiles)) {
-    const [name, kind, lat, lon, , weight] = row;
-    const km = distanceKm(area.lat, area.lon, lat, lon);
-    if (km > radiusKm) continue;
-    const text = `${name} ${kind}`.toLowerCase();
-    const matched = wanted.filter(({ re }) => re.test(text)).map(({ w }) => w);
-    // Halls are often listed as hotels or restaurants, cafés as restaurants; a telling name counts too.
-    const fit =
-      fits.test(kind.toLowerCase()) ||
-      (HALL_TYPES.has(venueType) && EVENT_NAME.test(name)) ||
-      NAME_KINDS[venueType]?.test(name)
-        ? 2
-        : NEAR_KINDS[venueType]?.test(kind.toLowerCase())
-          ? 1
-          : 0;
-    if (fit === 0 && matched.length === 0) continue;
-    scored.push({
-      ...fromRow(row, city),
-      distanceKm: km,
-      ...(matched.length > 0 ? { match: `Matches “${matched.join(', ')}”` } : {}),
-      // Like "best … near me": the right kind of place, well established, close by.
-      score: matched.length * 3 + fit + weight * 3 - (km / radiusKm) * 3,
-    });
-  }
-  const seen = new Set<string>();
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .filter((v) => !seen.has(v.name.toLowerCase()) && seen.add(v.name.toLowerCase()))
-    .map(({ score: _score, ...v }) => v);
 }
 
 /** Plain words for each venue type, for a Google-style "best … near" search. */
@@ -778,7 +655,6 @@ export async function findVenues(
     centre,
     radiusKm = 12,
     placesKey,
-    tiles,
   }: VenueSearch = {},
 ): Promise<Venue[]> {
   const area = centre ?? (await geocodeCity(city, fetchImpl));
@@ -798,8 +674,6 @@ export async function findVenues(
       .sort((a, b) => popularity(b) - popularity(a) || a.distanceKm - b.distanceKm)
       .slice(0, limit);
   }
-  const indexed = await indexedVenues(area, city, venueType, preference, radiusKm, tiles);
-  if (indexed.length >= ENOUGH) return indexed.slice(0, limit);
   const box = radiusKm * KM;
   const viewbox = [lon - box, lat + box, lon + box, lat - box].join(',');
   const searches = searchesFor(venueType, preference);
@@ -841,9 +715,8 @@ export async function findVenues(
       });
     }
   }
-  const fromMap = [...found.values()]
+  return [...found.values()]
     .sort((a, b) => b.score - a.score || (a.distanceKm ?? 0) - (b.distanceKm ?? 0))
+    .slice(0, limit)
     .map(({ score: _score, ...v }) => v);
-  const known = new Set(indexed.map((v) => v.name.toLowerCase()));
-  return [...indexed, ...fromMap.filter((v) => !known.has(v.name.toLowerCase()))].slice(0, limit);
 }

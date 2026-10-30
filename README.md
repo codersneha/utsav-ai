@@ -111,7 +111,7 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 
 ### ✅ Testing
 
-- **279 tests across 31 files** (Vitest + Testing Library), with about **96% line and 87% branch coverage** (`npm run coverage`).
+- **274 tests across 31 files** (Vitest + Testing Library), with about **96% line and 87% branch coverage** (`npm run coverage`).
 - Unit tests: budget maths (exact sums, priority boosts, user overrides, guest impact, trade-offs that really fix the plan), timeline (compression, priorities, dependencies, slippage alerts, custom tasks), checklist & quote summaries, the change report (including the explainer's "50 more guests, smaller budget, two weeks earlier" case), validation, prompts, AI-output parsing, storage guards, calendar export, rate limiter and cache.
 - Culture tests pin the facts: the Bengali wedding is served in the right course order and never as a buffet, vegetarian-only menus have no fish or meat, a reception-only plan has no haldi, invented dishes are dropped, Jain guests always get a safe choice, and every photo comes from Wikimedia Commons with a licence.
 - Budget and planning tests: menus get richer with the food budget and never drop must-have dishes, AI menus that overspend are trimmed, dishes stay in serving order, the guest ledger counts and weights replies (and its CSV export neutralises spreadsheet formulas), what-if costs match the plan, and amounts like “20 lakh” or “1.5 crore” are read correctly.
@@ -160,7 +160,7 @@ vercel env add GEMINI_API_KEY # paste your key (Production + Preview)
 vercel --prod
 ```
 
-The page takes venues from Google Maps links. The API also has venue search (`venues` mode, `check` and `search` actions) over a bundled Overture Maps index plus OpenStreetMap, or Google Places when `GOOGLE_MAPS_API_KEY` is set; the page does not use it for now.
+The page takes venues from Google Maps links. The API also has venue search (`venues` mode, `check` and `search` actions) over OpenStreetMap, or Google Places when `GOOGLE_MAPS_API_KEY` is set; the page does not use it for now.
 
 Optionally set `GEMINI_MODEL` to use a different Gemini model. It can be a comma-separated list: a retry after an overload or stall moves to the next model. The default is `gemini-3.1-flash-lite,gemini-3-flash-preview`, the two fastest models in testing (about 3–5 s per request).
 

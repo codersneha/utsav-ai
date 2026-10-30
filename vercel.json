@@ -49,8 +49,7 @@
   ],
   "functions": {
     "api/generate.ts": {
-      "maxDuration": 60,
-      "includeFiles": "data/places/**"
+      "maxDuration": 60
     }
   }
 }
