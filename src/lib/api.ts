@@ -255,55 +255,25 @@ async function venueRequest(body: Record<string, string | number>): Promise<Venu
   }
 }
 
-/** Looks up a named venue (typo-tolerant, anywhere in India). */
-export const checkVenue = (name: string, city: string) => venueRequest({ action: 'check', name, city });
-
 /** Reads a venue's name and location from a Google Maps link. */
 export const venueFromMapsLink = (url: string) => venueRequest({ action: 'link', url });
-
-/** Venues around a place (or the user's own location) that best match the kind of place wanted. */
-export const findVenues = (
-  city: string,
-  {
-    venueType = 'undecided',
-    preference = '',
-    near = '',
-    radiusKm = 12,
-    position,
-  }: {
-    venueType?: string;
-    preference?: string;
-    near?: string;
-    radiusKm?: number;
-    position?: { lat: number; lon: number };
-  } = {},
-) =>
-  venueRequest({
-    action: 'search',
-    city,
-    venueType,
-    preference,
-    near: near || city,
-    radiusKm,
-    ...(position ? { lat: position.lat, lon: position.lon } : {}),
-  });
 
 export interface MenuScanResult {
   order?: PartyOrder;
   error?: string;
 }
 
-/**
- * Reads the pages of a restaurant menu (several photos at once) and plans the
- * party order within the food budget. Dishes read earlier can be passed in so
- * more pages can be added later without re-sending old photos.
- */
 /** What to build the party order from: menu photos, menu text, or typical prices. */
 export type MenuRequest =
   | { source: 'photos'; images: PreparedImage[]; known?: MenuItem[] }
   | { source: 'text'; text: string; known?: MenuItem[] }
   | { source: 'estimate' };
 
+/**
+ * Plans the party order within the food budget from a restaurant's menu. Dishes
+ * read from earlier pages can be passed in, so more pages can be added later
+ * without re-sending old photos.
+ */
 export async function scanMenu(
   details: EventDetails,
   request: MenuRequest,

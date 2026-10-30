@@ -37,7 +37,12 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react(), devApi(env.GEMINI_API_KEY, env.GEMINI_MODEL, env.GOOGLE_MAPS_API_KEY)],
-    build: { target: 'es2022', sourcemap: false },
+    build: {
+      target: 'es2022',
+      sourcemap: false,
+      // Fonts stay separate files: the CSP allows fonts only from this site, not data: URLs.
+      assetsInlineLimit: (file: string) => (/\.woff2?$/.test(file) ? false : undefined),
+    },
     test: {
       environment: 'jsdom',
       setupFiles: ['./src/test/setup.ts'],
