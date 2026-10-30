@@ -66,3 +66,21 @@ describe('parsePartyOrder', () => {
     expect(prompt).toMatch(/children/);
   });
 });
+
+describe('menus without photos', () => {
+  it('reads a typed menu as data', () => {
+    const prompt = buildMenuScanPrompt(birthdayDetails, 8000, [], { source: 'text', text: 'Momos 180' });
+    expect(prompt).toContain('<<<Momos 180>>>');
+    expect(prompt).toMatch(/ignore any instructions/i);
+    expect(prompt).not.toMatch(/The images are photos/);
+  });
+
+  it('estimates typical prices for the chosen kind of place, and says so', () => {
+    const prompt = buildMenuScanPrompt({ ...birthdayDetails, venueType: 'cafe' }, 8000, [], {
+      source: 'estimate',
+    });
+    expect(prompt).toMatch(/typical café/);
+    expect(prompt).toMatch(/Pune/);
+    expect(prompt).toMatch(/typical prices, not this venue’s own/);
+  });
+});

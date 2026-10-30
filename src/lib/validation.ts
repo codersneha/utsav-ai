@@ -28,6 +28,8 @@ export const LIMITS = {
   venueLinkMax: 600,
   describeMin: 10,
   describeMax: 600,
+  menuTextMin: 20,
+  menuTextMax: 6000,
   guestsMin: 1,
   guestsMax: 5000,
   budgetMin: 1000,
@@ -142,6 +144,7 @@ export function validateEventDetails(input: unknown, today: string): ValidationR
       ceremonies: validCeremonies(raw, eventType as EventType),
       venueName: venueNameOf(raw.venueName),
       venuePreference: cleanText(raw.venuePreference, LIMITS.venueMax),
+      wantsDecor: raw.wantsDecor !== false,
     },
   };
 }

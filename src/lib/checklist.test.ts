@@ -83,3 +83,11 @@ describe('restaurant and café venues', () => {
     expect(venueTypeOf('hall', 'Something')).toBeNull();
   });
 });
+
+describe('décor turned off', () => {
+  it('drops the decorator from the vendor checklist', () => {
+    const ids = (on: boolean) => buildChecklist('birthday', {}, 'cafe', on).map((g) => g.id);
+    expect(ids(true).some((id) => id === 'decor' || id === 'decorator')).toBe(true);
+    expect(ids(false).some((id) => id === 'decor' || id === 'decorator')).toBe(false);
+  });
+});

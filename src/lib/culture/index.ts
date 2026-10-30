@@ -1,5 +1,5 @@
 import type { Diet, EventDetails, EventType, MenuChoice } from '../../types.js';
-import { buildBudget } from '../budget.js';
+import { buildBudget, excludedCategories } from '../budget.js';
 import {
   PARTY_CEREMONIES,
   TRADITION_DATA,
@@ -21,7 +21,8 @@ export {
 type MenuDetails = Pick<
   EventDetails,
   'eventType' | 'tradition' | 'diets' | 'budget' | 'guests' | 'priorities'
->;
+> &
+  Partial<Pick<EventDetails, 'wantsDecor'>>;
 
 export function traditionOf(details: Pick<EventDetails, 'tradition'>): Tradition {
   return TRADITION_DATA[details.tradition];
@@ -58,9 +59,14 @@ export const BASE_PLATE_COST: Record<EventType, number> = {
 export function foodBudgetPerPlate(details: MenuDetails, catering?: number): number {
   const amount =
     catering ??
-    buildBudget(details.eventType, details.budget, details.guests, details.priorities).lines.find(
-      (l) => l.id === 'catering',
-    )?.amount ??
+    buildBudget(
+      details.eventType,
+      details.budget,
+      details.guests,
+      details.priorities,
+      {},
+      excludedCategories({ wantsDecor: details.wantsDecor ?? true }),
+    ).lines.find((l) => l.id === 'catering')?.amount ??
     0;
   return Math.floor(amount / Math.max(1, details.guests));
 }
@@ -293,14 +299,20 @@ export type DecorTier = 'simple' | 'classic' | 'grand';
 
 /** How much the décor budget allows per function. */
 export function decorTier(
-  details: Pick<EventDetails, 'eventType' | 'tradition' | 'ceremonies' | 'budget' | 'guests' | 'priorities'>,
+  details: Pick<EventDetails, 'eventType' | 'tradition' | 'ceremonies' | 'budget' | 'guests' | 'priorities'> &
+    Partial<Pick<EventDetails, 'wantsDecor'>>,
   decor?: number,
 ): DecorTier {
   const amount =
     decor ??
-    buildBudget(details.eventType, details.budget, details.guests, details.priorities).lines.find(
-      (l) => l.id === 'decor',
-    )?.amount ??
+    buildBudget(
+      details.eventType,
+      details.budget,
+      details.guests,
+      details.priorities,
+      {},
+      excludedCategories({ wantsDecor: details.wantsDecor ?? true }),
+    ).lines.find((l) => l.id === 'decor')?.amount ??
     0;
   const perFunction = amount / Math.max(1, ceremoniesFor(details).length);
   if (perFunction < 40_000) return 'simple';

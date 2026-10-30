@@ -272,18 +272,23 @@ function groupsFor(eventType: EventType, venueType: VenueType): GroupSpec[] {
   return groups.filter((g) => g.id !== 'caterer').map((g) => (g.id === 'venue' ? RESTAURANT_VENUE : g));
 }
 
+const DECOR_GROUPS = new Set(['decor', 'decorator']);
+
 export function buildChecklist(
   eventType: EventType,
   advice: Record<string, VendorAdvice> = {},
   venueType: VenueType = 'undecided',
+  wantsDecor = true,
 ): VendorGroup[] {
-  return groupsFor(eventType, venueType).map(({ tasks, questions: _questions, ...group }) => ({
-    ...group,
-    items: [
-      ...tasks.map((task, i) => ({ id: `${group.id}-${i}`, task })),
-      ...(advice[group.id]?.tasks ?? []).map((task, i) => ({ id: `${group.id}-ai-${i}`, task, ai: true })),
-    ],
-  }));
+  return groupsFor(eventType, venueType)
+    .filter((g) => wantsDecor || !DECOR_GROUPS.has(g.id))
+    .map(({ tasks, questions: _questions, ...group }) => ({
+      ...group,
+      items: [
+        ...tasks.map((task, i) => ({ id: `${group.id}-${i}`, task })),
+        ...(advice[group.id]?.tasks ?? []).map((task, i) => ({ id: `${group.id}-ai-${i}`, task, ai: true })),
+      ],
+    }));
 }
 
 /** Google Maps search link for finding vendors near the event city. */

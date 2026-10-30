@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   VenueLookupError,
   checkVenue,
+  coreName,
   distanceKm,
   findVenues,
+  googleTextSearch,
+  matchScore,
   nameSimilarity,
+  soundKey,
   resolveMapsLink,
   searchesFor,
 } from './venues.js';
@@ -220,5 +224,80 @@ describe('venue name matching and Google Maps links', () => {
     expect(await resolveMapsLink('https://evil.example.com/maps/place/X/@1,2')).toBeNull();
     expect(await resolveMapsLink('http://www.google.com/maps/place/X/@1,2')).toBeNull();
     expect(await resolveMapsLink('not a url')).toBeNull();
+  });
+});
+
+describe('search-engine style matching', () => {
+  it('hears Indian spelling variants as the same word', () => {
+    expect(soundKey('banket')).toBe(soundKey('banquet'));
+    expect(soundKey('Shibaloy')).toBe(soundKey('shibaloi'));
+    expect(soundKey('zaika')).toBe(soundKey('jaika'));
+  });
+
+  it('drops the city and filler words from what was typed', () => {
+    expect(coreName('bubble and tea kolkata', 'Kolkata')).toBe('bubble and tea');
+    expect(coreName('Royal Aura Banket, Habra', 'Habra')).toBe('Royal Aura Banket');
+  });
+
+  it('matches a loosely typed name to the real one, but not to a different place', () => {
+    expect(matchScore('bubble and tea', 'Bubble N Tea Asian Cafe')).toBeGreaterThanOrEqual(0.75);
+    expect(matchScore('arsalan park street', 'Arsalan', 'Park Street, Kolkata')).toBeGreaterThanOrEqual(0.75);
+    expect(matchScore('bubble and tea', 'Tea Junction')).toBeLessThan(0.75);
+  });
+});
+
+describe('Google Places search (when a key is configured)', () => {
+  const place = {
+    id: 'ChIJabc-123',
+    displayName: { text: 'Bubble N Tea Asian Cafe' },
+    formattedAddress: 'Lake Town, Kolkata, West Bengal, India',
+    location: { latitude: 22.6, longitude: 88.4 },
+    rating: 4.46,
+    userRatingCount: 812,
+    primaryTypeDisplayName: { text: 'Cafe' },
+  };
+
+  it('sends the key in a header, biases to the area and returns ratings and a place link', async () => {
+    const fetchImpl = vi.fn(async () => json({ places: [place, { displayName: { text: 'No location' } }] }));
+    const venues = await googleTextSearch(
+      'best cafe near Lake Town',
+      { lat: 22.6, lon: 88.4 },
+      'test-key',
+      fetchImpl as unknown as typeof fetch,
+      5,
+    );
+    expect(venues).toHaveLength(1);
+    expect(venues[0]).toMatchObject({
+      name: 'Bubble N Tea Asian Cafe',
+      kind: 'cafe',
+      rating: 4.5,
+      reviews: 812,
+    });
+    expect(venues[0].mapsUrl).toContain('query_place_id=ChIJabc-123');
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('places.googleapis.com');
+    expect((init.headers as Record<string, string>)['X-Goog-Api-Key']).toBe('test-key');
+    expect(JSON.parse(String(init.body)).locationBias.circle.radius).toBe(5000);
+  });
+
+  it('finds a loosely named place through Google before the open map', async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.includes('places.googleapis.com')
+        ? json({ places: [place] })
+        : json([{ name: 'Kolkata', ...KOLKATA }]),
+    );
+    const venues = await checkVenue(
+      'bubble and tea kolkata',
+      'Kolkata',
+      fetchImpl as unknown as typeof fetch,
+      async () => {},
+      'test-key',
+    );
+    expect(venues[0]).toMatchObject({ name: 'Bubble N Tea Asian Cafe', match: 'Closest match', rating: 4.5 });
+  });
+
+  it('reports a Places error instead of returning nothing', async () => {
+    const fetchImpl = (async () => json({}, 403)) as unknown as typeof fetch;
+    await expect(googleTextSearch('x', null, 'bad', fetchImpl)).rejects.toBeInstanceOf(VenueLookupError);
   });
 });

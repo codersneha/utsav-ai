@@ -21,6 +21,7 @@ export const weddingDetails: EventDetails = {
   ceremonies: ['mehendi', 'pithi', 'wedding', 'reception'],
   venueName: '',
   venuePreference: '',
+  wantsDecor: true,
 };
 
 export const birthdayDetails: EventDetails = {
@@ -41,6 +42,7 @@ export const birthdayDetails: EventDetails = {
   ceremonies: [],
   venueName: '',
   venuePreference: '',
+  wantsDecor: true,
 };
 
 /** Raw model output for `weddingDetails` (Marwari), as Gemini returns it. */
@@ -180,7 +182,7 @@ export function apiResponder(answer = 'Book the venue first.') {
 }
 
 const SECTION_KEYS: Record<IdeasSection, (keyof Ideas)[]> = {
-  decor: ['ceremonies'],
+  decor: ['ceremonies', 'looks'],
   menu: ['menu'],
   extras: ['summary', 'activities', 'budgetTips'],
 };
@@ -196,6 +198,8 @@ export function apiIdeas(details: EventDetails, section?: IdeasSection, refineme
     source: undefined,
     summary: refinement ? `Refined: ${refinement}` : 'A colourful celebration.',
     ceremonies: base.ceremonies.map((c, i) => (i === 0 ? { ...c, theme: 'Marigold' } : c)),
+    // Single-function events show three looks; the first is themed "Marigold" too.
+    looks: base.looks?.map((l, i) => (i === 0 ? { ...l, name: 'Marigold' } : l)),
   };
   if (!section) return ideas;
   return Object.fromEntries(SECTION_KEYS[section].map((k) => [k, ideas[k]]));

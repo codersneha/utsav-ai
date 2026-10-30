@@ -88,6 +88,10 @@ export const isLogistics = (v: unknown): v is Logistics =>
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
 
+const isPalette = (v: unknown) =>
+  Array.isArray(v) &&
+  v.every((p) => isObject(p) && isString(p.name) && isString(p.hex) && /^#[0-9a-f]{6}$/i.test(p.hex));
+
 const isCeremonyIdeas = (v: unknown) =>
   Array.isArray(v) &&
   v.every(
@@ -95,12 +99,17 @@ const isCeremonyIdeas = (v: unknown) =>
       isObject(c) &&
       isString(c.ceremonyId) &&
       isString(c.theme) &&
-      Array.isArray(c.palette) &&
-      c.palette.every(
-        (p) => isObject(p) && isString(p.name) && isString(p.hex) && /^#[0-9a-f]{6}$/i.test(p.hex),
-      ) &&
+      isPalette(c.palette) &&
       isStrings(c.decor),
   );
+
+/** Décor looks are optional (weddings and older saved ideas have none). */
+const isLooks = (v: unknown) =>
+  v === undefined ||
+  (Array.isArray(v) &&
+    v.every(
+      (l) => isObject(l) && isString(l.name) && isPalette(l.palette) && isStrings(l.decor) && isString(l.why),
+    ));
 
 const isMenu = (v: unknown) =>
   Array.isArray(v) && v.every((m) => isObject(m) && isString(m.courseId) && isStrings(m.dishes));
@@ -111,6 +120,7 @@ export const isIdeas = (v: unknown): v is Ideas =>
   (v.source === 'gemini' || v.source === 'fallback') &&
   isString(v.summary) &&
   isCeremonyIdeas(v.ceremonies) &&
+  isLooks(v.looks) &&
   isMenu(v.menu) &&
   isStrings(v.activities) &&
   isStrings(v.budgetTips);
@@ -118,7 +128,7 @@ export const isIdeas = (v: unknown): v is Ideas =>
 /** Checks the part of the ideas a section request returns. */
 export function isIdeasPart(v: unknown, section: IdeasSection): v is Partial<Ideas> {
   if (!isObject(v)) return false;
-  if (section === 'decor') return isCeremonyIdeas(v.ceremonies);
+  if (section === 'decor') return isCeremonyIdeas(v.ceremonies) && isLooks(v.looks);
   if (section === 'menu') return isMenu(v.menu);
   return isString(v.summary) && isStrings(v.activities) && isStrings(v.budgetTips);
 }
@@ -150,6 +160,7 @@ const isCount2 = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && 
 /** A party order from a restaurant menu, as returned by the API or stored in the browser. */
 export const isPartyOrder = (v: unknown): v is PartyOrder =>
   isObject(v) &&
+  (v.source === undefined || v.source === 'photos' || v.source === 'text' || v.source === 'estimate') &&
   isCount2(v.itemsRead) &&
   isCount2(v.pages) &&
   Array.isArray(v.items) &&

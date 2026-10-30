@@ -68,3 +68,20 @@ describe('extraction and language prompts', () => {
     expect(buildIdeasPrompt({ ...birthdayDetails, language: 'hinglish' })).toContain('Hinglish');
   });
 });
+
+describe('décor looks in the ideas prompt', () => {
+  it('asks for three different looks, from trends when no style is given, light-touch at cafés', () => {
+    const plain = buildIdeasPrompt({ ...birthdayDetails, venueType: 'cafe' });
+    expect(plain).toMatch(/exactly 3 clearly DIFFERENT décor looks/);
+    expect(plain).toMatch(/popular in India right now/);
+    expect(plain).toMatch(/light-touch/);
+    const styled = buildIdeasPrompt(
+      { ...birthdayDetails, preferences: 'boho, fairy lights' },
+      undefined,
+      'decor',
+    );
+    expect(styled).toMatch(/Base the looks on EVENT_DATA/);
+    expect(buildIdeasPrompt(weddingDetails)).not.toMatch(/décor looks/);
+    expect(buildIdeasPrompt(birthdayDetails, undefined, 'menu')).not.toMatch(/décor looks/);
+  });
+});

@@ -118,6 +118,7 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           onRefine={planner.ideas.refine}
           onRefreshSection={planner.ideas.refreshSection}
           onUseInspiration={planner.applyLook}
+          onToggleDecor={planner.setDecor}
           catering={plan.budget.lines.find((l) => l.id === 'catering')?.amount}
           decor={plan.budget.lines.find((l) => l.id === 'decor')?.amount}
         />

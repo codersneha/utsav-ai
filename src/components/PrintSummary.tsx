@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { isRestaurantVenue } from '../lib/checklist';
 import { ceremoniesFor, menuFor } from '../lib/culture';
 import { formatDate } from '../lib/dates';
 import { guestTotals } from '../lib/guests';
@@ -89,8 +90,23 @@ export function PrintSummary({ plan, ideas, logistics, timelineDone, vendors, gu
       {ideas && (
         <section>
           <h2>Décor</h2>
+          {!details.wantsDecor && <p>Décor: not planned (ideas kept for reference).</p>}
           <table>
             <tbody>
+              {(details.eventType === 'wedding' ? [] : (ideas.looks ?? []))
+                .filter((l) => l.palette.map((p) => p.name).join(', ') === details.colors)
+                .map((l) => (
+                  <tr key={l.name}>
+                    <td>
+                      <strong>Chosen look</strong>
+                    </td>
+                    <td>
+                      <strong>{l.name}</strong> — {l.palette.map((p) => p.name).join(', ')}
+                      <br />
+                      {l.decor.join('; ')}
+                    </td>
+                  </tr>
+                ))}
               {ceremonies.map((c) => {
                 const idea = ideas.ceremonies.find((i) => i.ceremonyId === c.id);
                 return (
@@ -113,17 +129,26 @@ export function PrintSummary({ plan, ideas, logistics, timelineDone, vendors, gu
           </table>
 
           <h2>Menu</h2>
-          <p>{menu.service}</p>
-          <table>
-            <tbody>
-              {ideas.menu.map((m) => (
-                <tr key={m.courseId}>
-                  <td>{menu.courses.find((c) => c.id === m.courseId)?.name ?? m.courseId}</td>
-                  <td>{m.dishes.join(', ')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {isRestaurantVenue(details.venueType) ? (
+            <p>
+              Food comes from the {details.venueType === 'cafe' ? 'café' : 'restaurant'}’s own menu — see the
+              party order in the Ideas tab.
+            </p>
+          ) : (
+            <>
+              <p>{menu.service}</p>
+              <table>
+                <tbody>
+                  {ideas.menu.map((m) => (
+                    <tr key={m.courseId}>
+                      <td>{menu.courses.find((c) => c.id === m.courseId)?.name ?? m.courseId}</td>
+                      <td>{m.dishes.join(', ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </section>
       )}
 

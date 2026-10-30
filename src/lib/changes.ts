@@ -82,6 +82,13 @@ export function describeChanges(before: EventPlan, after: EventPlan, today: stri
   if (a.venuePreference !== b.venuePreference && b.venuePreference) {
     lines.push(`Venue preference: ${b.venuePreference}.`);
   }
+  if (a.wantsDecor !== b.wantsDecor) {
+    lines.push(
+      b.wantsDecor
+        ? 'Décor is back on: money is set aside for it and decorators are on your checklist.'
+        : 'Décor is off: its money went to the other categories and decorators left your checklist. Décor ideas stay in the Ideas tab if you change your mind.',
+    );
+  }
   if (a.venueName !== b.venueName) {
     lines.push(b.venueName ? `Venue set to ${b.venueName}.` : 'Venue cleared.');
   }

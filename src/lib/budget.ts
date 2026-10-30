@@ -120,9 +120,12 @@ export function buildBudget(
   guests: number,
   priorities: Priority[],
   overrides: Record<string, number> = {},
+  /** Categories left out of the plan (e.g. décor when the venue needs none). */
+  excluded: string[] = [],
 ): BudgetPlan {
   const specs = BUDGET_TEMPLATES[eventType];
-  const suggested = splitExact(total, applyPriorities(specs, priorities));
+  const weights = applyPriorities(specs, priorities).map((w, i) => (excluded.includes(specs[i].id) ? 0 : w));
+  const suggested = splitExact(total, weights);
 
   const lines: BudgetLine[] = specs.map((spec, i) => {
     const own = overrides[spec.id];
@@ -344,3 +347,7 @@ export function describeShift(plan: BudgetPlan, next: Record<string, number>): s
   }
   return parts.join(' · ');
 }
+
+/** Budget categories a plan leaves out, from its details. */
+export const excludedCategories = (details: { wantsDecor: boolean }): string[] =>
+  details.wantsDecor ? [] : ['decor'];

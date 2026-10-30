@@ -261,11 +261,32 @@ export const checkVenue = (name: string, city: string) => venueRequest({ action:
 /** Reads a venue's name and location from a Google Maps link. */
 export const venueFromMapsLink = (url: string) => venueRequest({ action: 'link', url });
 
-/** Venues around a place that best match the kind of place wanted. */
+/** Venues around a place (or the user's own location) that best match the kind of place wanted. */
 export const findVenues = (
   city: string,
-  { venueType = 'undecided', preference = '', near = '', radiusKm = 12 } = {},
-) => venueRequest({ action: 'search', city, venueType, preference, near: near || city, radiusKm });
+  {
+    venueType = 'undecided',
+    preference = '',
+    near = '',
+    radiusKm = 12,
+    position,
+  }: {
+    venueType?: string;
+    preference?: string;
+    near?: string;
+    radiusKm?: number;
+    position?: { lat: number; lon: number };
+  } = {},
+) =>
+  venueRequest({
+    action: 'search',
+    city,
+    venueType,
+    preference,
+    near: near || city,
+    radiusKm,
+    ...(position ? { lat: position.lat, lon: position.lon } : {}),
+  });
 
 export interface MenuScanResult {
   order?: PartyOrder;
@@ -277,15 +298,20 @@ export interface MenuScanResult {
  * party order within the food budget. Dishes read earlier can be passed in so
  * more pages can be added later without re-sending old photos.
  */
+/** What to build the party order from: menu photos, menu text, or typical prices. */
+export type MenuRequest =
+  | { source: 'photos'; images: PreparedImage[]; known?: MenuItem[] }
+  | { source: 'text'; text: string; known?: MenuItem[] }
+  | { source: 'estimate' };
+
 export async function scanMenu(
   details: EventDetails,
-  images: PreparedImage[],
+  request: MenuRequest,
   budget: number,
-  known: MenuItem[] = [],
 ): Promise<MenuScanResult> {
   try {
     // Reading several menu pages takes longer than other requests.
-    const res = await postJson({ mode: 'menuScan', details, images, budget, known }, undefined, 55_000);
+    const res = await postJson({ mode: 'menuScan', details, budget, ...request }, undefined, 55_000);
     if (!res.ok) {
       return {
         error:
@@ -294,8 +320,10 @@ export async function scanMenu(
             : res.status === 413
               ? 'Those photos are too large together — add up to 8 pages at a time.'
               : res.status === 502
-                ? 'We couldn’t read a menu with prices in those photos — try clearer, closer photos.'
-                : 'Could not read that menu just now — please try again.',
+                ? request.source === 'photos'
+                  ? 'We couldn’t read a menu with prices in those photos — try clearer, closer photos.'
+                  : 'We couldn’t find dishes with prices in that — check the menu text and try again.'
+                : 'Could not build the order just now — please try again.',
       };
     }
     const data = (await res.json()) as { order?: unknown };

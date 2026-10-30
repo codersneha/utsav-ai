@@ -1,4 +1,13 @@
-import { HandPlatter, PartyPopper, PiggyBank, RefreshCw, Sparkles, Utensils, Wand2 } from 'lucide-react';
+import {
+  Check,
+  HandPlatter,
+  PartyPopper,
+  PiggyBank,
+  RefreshCw,
+  Sparkles,
+  Utensils,
+  Wand2,
+} from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import {
   MENU_TIER_LABELS,
@@ -12,7 +21,7 @@ import {
 } from '../lib/culture';
 import { formatInr } from '../lib/plan';
 import { LIMITS } from '../lib/validation';
-import type { EventDetails, Ideas, IdeasSection } from '../types';
+import type { DecorLook, EventDetails, Ideas, IdeasSection } from '../types';
 import { InspirationCard } from './InspirationCard';
 import { RestaurantMenuCard } from './RestaurantMenuCard';
 import { isRestaurantVenue } from '../lib/checklist';
@@ -26,11 +35,27 @@ interface Props {
   onRegenerate: () => void;
   onRefine: (request: string) => void;
   onRefreshSection: (section: IdeasSection, request?: string) => void;
-  onUseInspiration: (look: { colors: string; note: string }) => void;
+  onUseInspiration: (look: { colors: string; note: string; message?: string }) => void;
+  /** Turns décor planning (its budget and decorator tasks) on or off. */
+  onToggleDecor: (on: boolean) => void;
   /** The planned catering and décor amounts (the user's own figures if edited). */
   catering?: number;
   decor?: number;
 }
+
+/** Example requests that fit the kind of event. */
+const DECOR_EXAMPLES: Record<EventDetails['eventType'], string> = {
+  wedding: 'e.g. more flowers for the biye, simpler haldi',
+  birthday: 'e.g. pastel balloons, a neon name sign',
+  community: 'e.g. more lights at the entrance, eco-friendly stalls',
+  corporate: 'e.g. use our brand colours, fewer flowers',
+};
+const MENU_EXAMPLES: Record<EventDetails['eventType'], string> = {
+  wedding: 'e.g. add ilish, lighter starters, winter sweets',
+  birthday: 'e.g. more kid-friendly snacks, a chocolate dessert',
+  community: 'e.g. more street-food stalls, a sweet counter',
+  corporate: 'e.g. lighter lunch, more vegetarian options',
+};
 
 const TIER_LABELS: Record<DecorTier, string> = {
   simple: 'Simple & homely',
@@ -131,6 +156,77 @@ function CeremonyCard({
   );
 }
 
+/** The colours of a look, in the form's "Colour palette" format. */
+const lookColours = (look: DecorLook) => look.palette.map((p) => p.name).join(', ');
+
+function LookCard({
+  look,
+  chosen,
+  onUse,
+  disabled,
+}: {
+  look: DecorLook;
+  chosen: boolean;
+  onUse: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <li className={`look-card card${chosen ? ' chosen' : ''}`}>
+      <PaletteStrip colours={look.palette} label={look.name} />
+      <div className="ceremony-body">
+        <h4>{look.name}</h4>
+        <p className="muted small">{look.why}</p>
+        <ul className="ticks">
+          {look.decor.map((d) => (
+            <li key={d}>
+              <Sparkles size={14} aria-hidden="true" /> {d}
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          className={`btn small${chosen ? ' primary' : ''}`}
+          onClick={onUse}
+          disabled={disabled || chosen}
+          aria-label={chosen ? `${look.name} is your look` : `Use the ${look.name} look`}
+        >
+          {chosen ? (
+            <>
+              <Check size={16} aria-hidden="true" /> Your look
+            </>
+          ) : (
+            'Use this look'
+          )}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function DecorSwitch({
+  on,
+  onToggle,
+  disabled,
+}: {
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      className="switch"
+      disabled={disabled}
+      onClick={() => onToggle(!on)}
+    >
+      <span className="switch-track" aria-hidden="true" />
+      <span>{on ? 'Plan décor' : 'No décor needed'}</span>
+    </button>
+  );
+}
+
 function MenuCard({ details, ideas, catering }: { details: EventDetails; ideas: Ideas; catering?: number }) {
   const plan = menuFor(details, catering);
   const chosen = new Map(ideas.menu.map((m) => [m.courseId, m.dishes]));
@@ -205,6 +301,7 @@ export function IdeasPanel(props: Props) {
   const ceremonies = ceremoniesFor(details);
   const tier = decorTier(details, props.decor);
   const busy = (s: IdeasSection) => loading && (busySection === s || busySection === null);
+  const looks = details.eventType === 'wedding' ? [] : (ideas?.looks ?? []);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -282,24 +379,58 @@ export function IdeasPanel(props: Props) {
             <div className="panel-head">
               <h3 id="decor-heading">{details.eventType === 'wedding' ? 'Ceremonies & décor' : 'Décor'}</h3>
               {busy('decor') && busySection === 'decor' && <span className="pill">Updating décor…</span>}
+              <DecorSwitch on={details.wantsDecor} onToggle={props.onToggleDecor} disabled={loading} />
             </div>
+            {!details.wantsDecor && (
+              <p className="notice">
+                Décor is off — no money is set aside for it and decorators are off your checklist. These ideas
+                stay here in case you want a few touches.
+              </p>
+            )}
             <SectionRefine
               section="decor"
               label="Change the décor"
-              placeholder="e.g. more flowers for the biye, simpler haldi"
+              placeholder={DECOR_EXAMPLES[details.eventType]}
               busy={loading}
               onRefresh={props.onRefreshSection}
             />
-            <ul className="ceremony-grid">
-              {ceremonies.map((c) => (
-                <CeremonyCard
-                  key={c.id}
-                  ceremony={c}
-                  idea={ideas.ceremonies.find((i) => i.ceremonyId === c.id)}
-                  tier={tier}
-                />
-              ))}
-            </ul>
+            {looks.length > 0 ? (
+              <>
+                <p className="hint">
+                  {details.colors || details.preferences
+                    ? 'Three different looks, built from what you told us. Pick one and the plan follows it.'
+                    : 'Three different looks that are popular right now. Pick one, or tell us your style above.'}
+                </p>
+                <ul className="ceremony-grid looks-grid">
+                  {looks.map((l) => (
+                    <LookCard
+                      key={l.name}
+                      look={l}
+                      chosen={details.colors === lookColours(l)}
+                      disabled={loading}
+                      onUse={() =>
+                        props.onUseInspiration({
+                          colors: lookColours(l),
+                          note: `Chosen décor look: ${l.name}`,
+                          message: `Décor look set to “${l.name}”.`,
+                        })
+                      }
+                    />
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <ul className="ceremony-grid">
+                {ceremonies.map((c) => (
+                  <CeremonyCard
+                    key={c.id}
+                    ceremony={c}
+                    idea={ideas.ceremonies.find((i) => i.ceremonyId === c.id)}
+                    tier={tier}
+                  />
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="ideas-section" aria-labelledby="menu-heading" aria-busy={busy('menu')}>
@@ -308,26 +439,13 @@ export function IdeasPanel(props: Props) {
               {busySection === 'menu' && <span className="pill">Updating menu…</span>}
             </div>
             {isRestaurantVenue(details.venueType) ? (
-              <>
-                <RestaurantMenuCard details={details} catering={props.catering} />
-                <details className="card typical-menu">
-                  <summary>Typical party menu ideas, to compare with the restaurant’s menu</summary>
-                  <SectionRefine
-                    section="menu"
-                    label="Change the menu"
-                    placeholder="e.g. add ilish, lighter starters, winter sweets"
-                    busy={loading}
-                    onRefresh={props.onRefreshSection}
-                  />
-                  <MenuCard details={details} ideas={ideas} catering={props.catering} />
-                </details>
-              </>
+              <RestaurantMenuCard details={details} catering={props.catering} />
             ) : (
               <>
                 <SectionRefine
                   section="menu"
                   label="Change the menu"
-                  placeholder="e.g. add ilish, lighter starters, winter sweets"
+                  placeholder={MENU_EXAMPLES[details.eventType]}
                   busy={loading}
                   onRefresh={props.onRefreshSection}
                 />

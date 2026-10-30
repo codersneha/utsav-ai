@@ -61,6 +61,8 @@ export interface EventDetails {
   venueName: string;
   /** What kind of place the user would like, in their words (e.g. "rooftop with dine-in"). */
   venuePreference: string;
+  /** Whether décor is part of the plan (cafés and restaurants often need none). */
+  wantsDecor: boolean;
 }
 
 export interface BudgetLine {
@@ -177,10 +179,21 @@ export interface MenuChoice {
   dishes: string[];
 }
 
+/** One complete décor look the user can pick (for single-function events). */
+export interface DecorLook {
+  name: string;
+  palette: { name: string; hex: string }[];
+  decor: string[];
+  /** Why it suits this event: what the user asked for, or the trend it follows. */
+  why: string;
+}
+
 /** Personalised, AI-generated (or fallback) ideas. */
 export interface Ideas {
   summary: string;
   ceremonies: CeremonyIdea[];
+  /** Three different looks to choose from, for birthdays, community and corporate events. */
+  looks?: DecorLook[];
   menu: MenuChoice[];
   activities: string[];
   budgetTips: string[];
@@ -254,6 +267,9 @@ export interface Venue {
   distanceKm?: number;
   /** Why it was suggested, e.g. Matches “rooftop”. */
   match?: string;
+  /** Google rating out of 5 and number of reviews (only with Google Places). */
+  rating?: number;
+  reviews?: number;
   /** Google Maps search link — for photos, reviews and ratings. */
   mapsUrl: string;
   osmUrl: string;
@@ -303,8 +319,13 @@ export interface PartyOrderLine extends MenuItem {
   cost: number;
 }
 
-/** A party order built from a photo of a restaurant or café menu. */
+/** Where a restaurant's menu came from: its photos, text the user typed, or an AI estimate. */
+export type MenuSource = 'photos' | 'text' | 'estimate';
+
+/** A party order built from a restaurant or café menu. */
 export interface PartyOrder {
+  /** Older saved orders have no source; they were read from photos. */
+  source?: MenuSource;
   /** How many dishes were read from the menu. */
   itemsRead: number;
   /** Every dish read so far, so more menu pages can be added later. */

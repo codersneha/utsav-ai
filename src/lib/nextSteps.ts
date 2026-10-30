@@ -1,5 +1,6 @@
 import type { EventPlan, GuestEntry, Ideas, VendorEntry } from '../types.js';
 import { menuCost, menuFor } from './culture/index.js';
+import { isRestaurantVenue } from './checklist.js';
 import { daysBetween } from './dates.js';
 import { formatInr } from './plan.js';
 import { guestTotals } from './guests.js';
@@ -38,7 +39,8 @@ export function nextSteps({ plan, today, timelineDone, vendors, guests, ideas }:
   for (const w of budget.warnings.slice(0, 1))
     steps.push({ id: 'budget', text: w, tab: 'budget', urgent: true });
 
-  if (ideas) {
+  // At a restaurant or café the venue's own menu is used, not the suggested one.
+  if (ideas && !isRestaurantVenue(details.venueType)) {
     const catering = budget.lines.find((l) => l.id === 'catering')?.amount;
     const menu = menuFor(details, catering);
     const over = menuCost(ideas.menu, menu) - menu.perPlate;
@@ -55,7 +57,7 @@ export function nextSteps({ plan, today, timelineDone, vendors, guests, ideas }:
   if (!details.venueName && !booked('venue')) {
     steps.push({ id: 'venue', text: 'Find and choose a venue that matches what you want.', tab: 'vendors' });
   }
-  if (!booked('caterer') && daysToGo <= 120) {
+  if (!isRestaurantVenue(details.venueType) && !booked('caterer') && daysToGo <= 120) {
     steps.push({ id: 'caterer', text: 'Shortlist caterers and compare per-plate quotes.', tab: 'vendors' });
   }
 

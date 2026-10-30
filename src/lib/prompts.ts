@@ -116,6 +116,20 @@ const SECTION_TASKS: Record<IdeasSection, string[]> = {
   ],
 };
 
+/** Three different décor looks to choose from, for single-function events. */
+function looksTask(details: EventDetails): string[] {
+  const atVenue = details.venueType === 'cafe' || details.venueType === 'restaurant';
+  return [
+    'looks: exactly 3 clearly DIFFERENT décor looks (a name, a palette of 3 colours with #rrggbb hex, 3 décor ideas, and why: one sentence on why it suits this event).',
+    details.colors || details.preferences
+      ? 'Base the looks on EVENT_DATA.colours and EVENT_DATA.preferences — the first follows them closely, the other two are distinct variations the user would still like.'
+      : 'Nothing about style was given, so use three looks that are genuinely popular in India right now for this kind of event and age group — never random — and say which trend each follows in why.',
+    atVenue
+      ? 'The venue is a café or restaurant that is already styled: keep every look light-touch (table and corner décor, nothing that needs fixing to walls), and say so in why.'
+      : '',
+  ].filter(Boolean);
+}
+
 /** Ideas for the whole plan, or just one section (so changing food never touches décor). */
 export function buildIdeasPrompt(
   details: EventDetails,
@@ -125,10 +139,13 @@ export function buildIdeasPrompt(
   const tasks = section
     ? SECTION_TASKS[section]
     : [...SECTION_TASKS.decor, ...SECTION_TASKS.menu, ...SECTION_TASKS.extras];
+  const looks =
+    details.eventType !== 'wedding' && (!section || section === 'decor') ? looksTask(details) : [];
   const lines = [
     'Personalise this plan using ONLY the verified cultural facts in CULTURE. They are correct — do not contradict them.',
     `Serving style is fixed: ${menuFor(details).service}`,
     ...tasks,
+    ...looks,
     'Keep every item under 25 words.',
     `EVENT_DATA: ${JSON.stringify(eventData(details))}`,
     `CULTURE: ${JSON.stringify(cultureData(details))}`,

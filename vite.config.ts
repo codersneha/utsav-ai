@@ -5,7 +5,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import type { handleGenerate as HandleGenerate } from './src/server/handler.ts';
 
 /** Serves /api/generate during `npm run dev`, mirroring the Vercel Function. */
-function devApi(apiKey: string | undefined, model: string | undefined): Plugin {
+function devApi(apiKey: string | undefined, model: string | undefined, placesKey?: string): Plugin {
   return {
     name: 'utsav-dev-api',
     configureServer(server) {
@@ -24,7 +24,7 @@ function devApi(apiKey: string | undefined, model: string | undefined): Plugin {
         const { handleGenerate } = (await server.ssrLoadModule('/src/server/handler.ts')) as {
           handleGenerate: typeof HandleGenerate;
         };
-        const response = await handleGenerate(request, { apiKey, model });
+        const response = await handleGenerate(request, { apiKey, model, placesKey });
         res.statusCode = response.status;
         response.headers.forEach((value, key) => res.setHeader(key, value));
         res.end(await response.text());
@@ -36,7 +36,7 @@ function devApi(apiKey: string | undefined, model: string | undefined): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
-    plugins: [react(), devApi(env.GEMINI_API_KEY, env.GEMINI_MODEL)],
+    plugins: [react(), devApi(env.GEMINI_API_KEY, env.GEMINI_MODEL, env.GOOGLE_MAPS_API_KEY)],
     build: { target: 'es2022', sourcemap: false },
     test: {
       environment: 'jsdom',

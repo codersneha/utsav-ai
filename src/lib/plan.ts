@@ -1,5 +1,5 @@
 import type { CustomTask, EventDetails, EventPlan, VendorAdvice } from '../types.js';
-import { buildBudget } from './budget.js';
+import { buildBudget, excludedCategories } from './budget.js';
 import { buildChecklist } from './checklist.js';
 import { buildTimeline } from './timeline.js';
 
@@ -20,9 +20,10 @@ export function buildPlan(details: EventDetails, today: string, edits: PlanEdits
       details.guests,
       details.priorities,
       edits.overrides,
+      excludedCategories(details),
     ),
     timeline: buildTimeline(details.eventType, details.date, today, edits.customTasks),
-    checklist: buildChecklist(details.eventType, edits.vendorAdvice, details.venueType),
+    checklist: buildChecklist(details.eventType, edits.vendorAdvice, details.venueType, details.wantsDecor),
   };
 }
 

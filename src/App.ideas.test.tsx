@@ -60,7 +60,7 @@ describe('venues', () => {
   it('finds venues near the city and lets the user choose one', async () => {
     const { user, container } = await openBengaliSample();
     await user.click(screen.getByRole('tab', { name: 'Vendors' }));
-    await user.type(screen.getByLabelText('What kind of place would you like?'), 'garden with banquet hall');
+    await user.type(screen.getByLabelText('What kind of place?'), 'garden with banquet hall');
     await user.click(screen.getByRole('button', { name: 'Find places' }));
     const choose = await screen.findByRole('button', { name: 'Choose Rajbari Banquet as the venue' });
     expect(screen.getByRole('link', { name: /Photos & reviews on Google Maps/ })).toHaveAttribute(
@@ -241,5 +241,77 @@ describe('a Google Maps link typed as the venue', () => {
     expect(sentBodies(fetchSpy).some((b) => b.mode === 'venues' && b.action === 'link')).toBe(true);
     // A café venue serves the food, so the caterer is gone.
     expect(screen.queryByRole('group', { name: 'Caterer' })).not.toBeInTheDocument();
+  });
+});
+
+describe('décor looks and the décor switch', () => {
+  async function openBirthday(extra: Record<string, unknown> = {}) {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
+    window.localStorage.setItem(
+      'utsav-ai:v1:details',
+      JSON.stringify({
+        ...birthdayDetails,
+        title: 'Aarav turns 6',
+        date: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        ...extra,
+      }),
+    );
+    const user = userEvent.setup();
+    const view = render(<App />);
+    await screen.findByRole('heading', { name: 'Aarav turns 6' });
+    await user.click(screen.getByRole('tab', { name: 'Ideas' }));
+    return { user, fetchSpy, ...view };
+  }
+
+  it('shows three different looks and applies the one chosen to the décor', async () => {
+    const { user, fetchSpy, container } = await openBirthday();
+    const decor = await screen.findByRole('region', { name: 'Décor' });
+    const use = await within(decor).findAllByRole('button', { name: /^Use the .* look$/ });
+    expect(use).toHaveLength(3);
+    expect(await axeViolations(container)).toEqual([]);
+    await user.click(within(decor).getByRole('button', { name: 'Use the Jungle safari look' }));
+    await vi.waitFor(() => {
+      const last = sentBodies(fetchSpy).at(-1);
+      expect(last).toMatchObject({ mode: 'ideas', section: 'decor' });
+      expect(last?.details.colors).toBe('Leaf green, Sand, Sunny yellow');
+    });
+    expect(await within(decor).findByRole('button', { name: 'Jungle safari is your look' })).toBeDisabled();
+  });
+
+  it('turns décor off: no décor money or decorator, but the ideas stay', async () => {
+    const { user } = await openBirthday();
+    const toggle = await screen.findByRole('switch', { name: 'Plan décor' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await user.click(toggle);
+    expect(await screen.findByRole('switch', { name: 'No décor needed' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    expect(screen.getByText(/Décor is off — no money is set aside/)).toBeInTheDocument();
+    expect(screen.getByText(/its money went to the other categories/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Use the .* look$/ }).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('tab', { name: 'Budget' }));
+    expect(screen.queryByRole('slider', { name: /Décor/ })).not.toBeInTheDocument();
+  });
+
+  it('at a café with no venue chosen, builds the order from a typed menu or an estimate — never its own menu', async () => {
+    const { user, fetchSpy } = await openBirthday({ venueType: 'cafe', ageGroup: 'adults' });
+    const card = await screen.findByRole('region', { name: /Party order from the café’s menu/ });
+    expect(screen.queryByRole('heading', { name: 'The menu' })).toBeInTheDocument();
+    expect(screen.queryByText(/per plate/)).not.toBeInTheDocument();
+    await user.type(within(card).getByLabelText('Menu, with prices'), 'Paneer Tikka 320\nCold Coffee 160');
+    await user.click(within(card).getByRole('button', { name: /Build the order/ }));
+    expect(await within(card).findByText('Paneer Tikka')).toBeInTheDocument();
+    expect(sentBodies(fetchSpy).find((b) => b.mode === 'menuScan')).toMatchObject({ source: 'text' });
+
+    await user.click(within(card).getByRole('button', { name: /Estimate for me/ }));
+    await user.click(within(card).getByRole('button', { name: /Estimate an order/ }));
+    await vi.waitFor(() =>
+      expect(
+        sentBodies(fetchSpy)
+          .filter((b) => b.mode === 'menuScan')
+          .at(-1),
+      ).toMatchObject({ source: 'estimate' }),
+    );
   });
 });

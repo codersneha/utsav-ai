@@ -9,12 +9,13 @@ import {
   parseInspiration,
   parseProposal,
 } from '../lib/assistant.js';
-import { buildBudget } from '../lib/budget.js';
+import { buildBudget, excludedCategories } from '../lib/budget.js';
 import { addDays, todayIso } from '../lib/dates.js';
 import { IDEAS_SCHEMAS, parseIdeas } from '../lib/ideas.js';
 import {
   MENU_SCAN_SCHEMA,
   buildMenuScanPrompt,
+  type MenuInput,
   cleanMenuItems,
   parsePartyOrder,
   partyFoodBudget,
@@ -60,6 +61,8 @@ export interface HandlerDeps {
   apiKey: string | undefined;
   /** Used for map (venue) lookups; defaults to fetchImpl. */
   mapFetch?: typeof fetch;
+  /** Optional Google Places key: Google-quality venue search with ratings. */
+  placesKey?: string;
   model?: string;
   fetchImpl?: typeof fetch;
   limiter?: RateLimiter;
@@ -95,6 +98,7 @@ type Job =
   | {
       mode: 'menuScan';
       details: EventDetails;
+      input: MenuInput;
       images: { data: string; mimeType: string }[];
       known: MenuItem[];
       budget: number;
@@ -127,6 +131,17 @@ function parseJob(payload: Record<string, unknown>, today: string): Job | { erro
 
   switch (payload.mode) {
     case 'menuScan': {
+      const given = Math.round(Number(payload.budget));
+      const budget =
+        Number.isFinite(given) && given > 0 ? Math.min(given, details.budget) : partyFoodBudget(details);
+      const known = cleanMenuItems(payload.known);
+      if (payload.source === 'estimate')
+        return { mode: 'menuScan', details, input: { source: 'estimate' }, images: [], known: [], budget };
+      if (payload.source === 'text') {
+        const text = cleanText(payload.text, LIMITS.menuTextMax);
+        if (text.length < LIMITS.menuTextMin) return { error: 'Menu text is too short' };
+        return { mode: 'menuScan', details, input: { source: 'text', text }, images: [], known, budget };
+      }
       const photos = Array.isArray(payload.images) ? payload.images : [];
       if (photos.length < 1 || photos.length > MAX_MENU_PAGES) return { error: 'Add 1 to 8 menu photos' };
       const images: { data: string; mimeType: string }[] = [];
@@ -135,10 +150,7 @@ function parseJob(payload: Record<string, unknown>, today: string): Job | { erro
         if (!isValidImage(photo.data, photo.mimeType, MAX_PHOTO_CHARS)) return { error: 'Invalid image' };
         images.push({ data: photo.data, mimeType: photo.mimeType as string });
       }
-      const given = Math.round(Number(payload.budget));
-      const budget =
-        Number.isFinite(given) && given > 0 ? Math.min(given, details.budget) : partyFoodBudget(details);
-      return { mode: 'menuScan', details, images, known: cleanMenuItems(payload.known), budget };
+      return { mode: 'menuScan', details, input: { source: 'photos' }, images, known, budget };
     }
     case 'ideas': {
       const section = SECTIONS.find((x) => x === payload.section);
@@ -197,7 +209,14 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
     }
     case 'ask': {
       const { details } = job;
-      const budget = buildBudget(details.eventType, details.budget, details.guests, details.priorities);
+      const budget = buildBudget(
+        details.eventType,
+        details.budget,
+        details.guests,
+        details.priorities,
+        {},
+        excludedCategories(details),
+      );
       const prompt = buildAskPrompt(details, budget, job.history, job.question, job.today);
       const text = await generateText(
         { ...base, prompt, responseSchema: ASK_RESPONSE_SCHEMA, temperature: 0.5, maxOutputTokens: 2048 },
@@ -213,8 +232,8 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
       const text = await generateText(
         {
           ...base,
-          prompt: buildMenuScanPrompt(job.details, job.budget, job.known),
-          images: job.images,
+          prompt: buildMenuScanPrompt(job.details, job.budget, job.known, job.input),
+          ...(job.images.length > 0 ? { images: job.images } : {}),
           responseSchema: MENU_SCAN_SCHEMA,
           temperature: 0.2,
           maxOutputTokens: 8192,
@@ -224,7 +243,7 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
         MENU_TIMEOUT_MS,
       );
       const order = parsePartyOrder(text, job.details.guests, job.budget, job.known, job.images.length);
-      return order ? { order } : null;
+      return order ? { order: { ...order, source: job.input.source } } : null;
     }
     case 'vision': {
       const text = await generateText(
@@ -275,7 +294,9 @@ async function handleVenues(
 
   const venueType = isVenueType(payload.venueType) ? payload.venueType : 'undecided';
   const preference = cleanText(payload.preference, LIMITS.venueMax);
-  const key = [action, city, name, link, near, radiusKm, venueType, preference].join('|').toLowerCase();
+  const key = [action, city, name, link, near, radiusKm, venueType, preference, payload.lat, payload.lon]
+    .join('|')
+    .toLowerCase();
   const cached = cache.get(key);
   if (cached) return json(200, { ...(cached as object), cached: true });
   const fetchImpl = deps.mapFetch ?? deps.fetchImpl;
@@ -286,11 +307,23 @@ async function handleVenues(
       if (!venue) return json(422, { error: 'That doesn’t look like a Google Maps link to a place' });
       body = { venues: [venue] };
     } else if (action === 'check') {
-      body = { venues: await checkVenue(name, city, fetchImpl) };
+      body = { venues: await checkVenue(name, city, fetchImpl, undefined, deps.placesKey) };
     } else {
-      const area = await geocodeCity(near, fetchImpl);
+      // "Near me" sends the browser's location; otherwise the typed area is located on the map.
+      const lat = Number(payload.lat);
+      const lon = Number(payload.lon);
+      const inIndia = lat >= 6 && lat <= 37 && lon >= 68 && lon <= 98;
+      const area: Area = inIndia
+        ? { name: 'your current location', lat, lon }
+        : await geocodeCity(near, fetchImpl);
       body = {
-        venues: await findVenues(city, fetchImpl, { venueType, preference, centre: area, radiusKm }),
+        venues: await findVenues(city, fetchImpl, {
+          venueType,
+          preference,
+          centre: area,
+          radiusKm,
+          placesKey: deps.placesKey,
+        }),
         area,
       };
     }

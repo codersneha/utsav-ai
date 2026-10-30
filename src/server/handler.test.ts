@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { geminiIdeas, geminiLogistics, geminiResponse, weddingDetails } from '../test/fixtures.js';
+import {
+  birthdayDetails,
+  geminiIdeas,
+  geminiLogistics,
+  geminiResponse,
+  weddingDetails,
+} from '../test/fixtures.js';
 import type { Ideas } from '../types.js';
 import {
   MAX_BODY_BYTES,
@@ -371,8 +377,9 @@ describe('handleGenerate — sections, photos and venues', () => {
     const res = await handleGenerate(post(body), d);
     expect(res.status).toBe(200);
     expect((await res.json()).venues[0].name).toBe('Rajbari');
+    const calls = mapFetch.mock.calls.length;
     expect((await (await handleGenerate(post(body), d)).json()).cached).toBe(true);
-    expect(mapFetch).toHaveBeenCalledTimes(1);
+    expect(mapFetch).toHaveBeenCalledTimes(calls);
   });
 
   it('rejects bad venue requests and reports unknown cities', async () => {
@@ -420,5 +427,62 @@ describe('handleGenerate — restaurant menu photos', () => {
     expect((await send([])).status).toBe(400);
     expect((await send(Array(9).fill(page))).status).toBe(400);
     expect((await send([{ data: btoa('not an image at all!!'), mimeType: 'image/jpeg' }])).status).toBe(400);
+  });
+});
+
+describe('handleGenerate — restaurant menus without photos', () => {
+  const reply = () =>
+    vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      geminiResponse(
+        JSON.stringify({
+          items: [{ name: 'Momos', category: 'starter', price: 180, veg: true, serves: 2 }],
+          order: [{ name: 'Momos', quantity: 5 }],
+          note: 'Typical prices.',
+        }),
+      ),
+    );
+  const sent = (fetchImpl: ReturnType<typeof reply>) =>
+    JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).contents[0].parts as {
+      text?: string;
+      inlineData?: unknown;
+    }[];
+
+  it('builds an order from a typed menu, with no images sent', async () => {
+    const fetchImpl = reply();
+    const res = await handleGenerate(
+      post({
+        mode: 'menuScan',
+        source: 'text',
+        text: 'Momos 180, Thukpa 220, Lemon tea 60',
+        details: birthdayDetails,
+      }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect(res.status).toBe(200);
+    const { order } = await res.json();
+    expect(order).toMatchObject({ source: 'text', total: 900 });
+    expect(sent(fetchImpl).some((p) => p.inlineData)).toBe(false);
+    expect(
+      sent(fetchImpl)
+        .map((p) => p.text)
+        .join(''),
+    ).toContain('Thukpa 220');
+  });
+
+  it('estimates an order from typical prices', async () => {
+    const fetchImpl = reply();
+    const res = await handleGenerate(
+      post({ mode: 'menuScan', source: 'estimate', details: { ...birthdayDetails, venueType: 'cafe' } }),
+      deps({ fetchImpl: fetchImpl as typeof fetch }),
+    );
+    expect((await res.json()).order.source).toBe('estimate');
+  });
+
+  it('rejects a typed menu that is too short', async () => {
+    const res = await handleGenerate(
+      post({ mode: 'menuScan', source: 'text', text: 'tea', details: birthdayDetails }),
+      deps(),
+    );
+    expect(res.status).toBe(400);
   });
 });

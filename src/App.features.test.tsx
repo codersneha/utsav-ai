@@ -33,6 +33,7 @@ const birthday: EventDetails = {
   ceremonies: [],
   venueName: '',
   venuePreference: '',
+  wantsDecor: true,
 };
 
 /** Renders the app with a saved plan and a working (mocked) API. */

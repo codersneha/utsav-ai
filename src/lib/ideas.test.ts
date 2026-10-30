@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { birthdayDetails, geminiIdeas, weddingDetails } from '../test/fixtures.js';
 import { menuFor } from './culture/index.js';
-import { coloursFromText, fallbackIdeas, mergeIdeas, parseIdeas } from './ideas.js';
+import { coloursFromText, fallbackIdeas, fallbackLooks, mergeIdeas, parseIdeas } from './ideas.js';
 
 describe('parseIdeas', () => {
   it('parses valid JSON text into ceremonies and courses', () => {
@@ -130,5 +130,51 @@ describe('colours from an inspiration photo', () => {
     expect(coloursFromText('pastel pink and mint')).toEqual([]);
     const ideas = fallbackIdeas({ ...birthdayDetails, colors });
     expect(ideas.ceremonies[0].palette[0]).toEqual({ name: 'Deep Violet', hex: '#4b0082' });
+  });
+});
+
+describe('décor looks', () => {
+  it('offers three different trend looks when the user gave no style', () => {
+    const looks = fallbackLooks(birthdayDetails);
+    expect(looks).toHaveLength(3);
+    expect(new Set(looks.map((l) => l.name)).size).toBe(3);
+    expect(looks.every((l) => l.palette.length > 0 && l.decor.length > 0 && l.why)).toBe(true);
+  });
+
+  it('keeps café looks light and leads with the user’s own colours', () => {
+    const cafe = fallbackLooks({ ...birthdayDetails, venueType: 'cafe', ageGroup: 'adults' });
+    expect(cafe[0].name).toBe('Table-top florals');
+    const own = fallbackLooks({ ...birthdayDetails, colors: 'Sage #9caf88, Ivory #f6efe2' });
+    expect(own[0].palette).toEqual([
+      { name: 'Sage', hex: '#9caf88' },
+      { name: 'Ivory', hex: '#f6efe2' },
+    ]);
+    expect(own[0].why).toMatch(/colours you chose/);
+  });
+
+  it('fills missing looks from the model with its own idea and then trends — never for weddings', () => {
+    const raw = {
+      ceremonies: [
+        {
+          id: fallbackIdeas(birthdayDetails).ceremonies[0].ceremonyId,
+          theme: 'Under the sea',
+          palette: [{ name: 'Ocean', hex: '#1b6ca8' }],
+          decor: ['Bubble machine'],
+        },
+      ],
+      looks: [
+        {
+          name: 'Rainbow',
+          palette: [{ name: 'Red', hex: '#c1121f' }],
+          decor: ['Rainbow arch'],
+          why: 'Bright.',
+        },
+      ],
+    };
+    const looks = parseIdeas(JSON.stringify(raw), birthdayDetails, 'decor')?.looks ?? [];
+    expect(looks.map((l) => l.name)).toEqual(['Rainbow', 'Pastel balloon garland', 'Jungle safari']);
+    const none = parseIdeas(JSON.stringify({ ...raw, looks: [] }), birthdayDetails, 'decor')?.looks ?? [];
+    expect(none[0].name).toBe('Under the sea');
+    expect(fallbackIdeas(weddingDetails).looks).toBeUndefined();
   });
 });

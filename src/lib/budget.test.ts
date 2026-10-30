@@ -4,6 +4,7 @@ import {
   applyPriorities,
   BUDGET_TEMPLATES,
   buildBudget,
+  excludedCategories,
   describeShift,
   guestImpact,
   PRIORITY_BOOST,
@@ -208,5 +209,14 @@ describe('rebalancing the split', () => {
   it('summarises what moved', () => {
     const text = describeShift(plan, releaseCategory(plan, 'entertainment'));
     expect(text).toMatch(/^Music & entertainment −₹[\d,]+ · Unallocated \+₹[\d,]+$/);
+  });
+});
+
+describe('décor turned off', () => {
+  it('puts no money into décor and shares it among the other categories', () => {
+    const plan = buildBudget('birthday', 60_000, 40, [], {}, excludedCategories({ wantsDecor: false }));
+    expect(plan.lines.find((l) => l.id === 'decor')?.amount ?? 0).toBe(0);
+    expect(plan.lines.reduce((s, l) => s + l.amount, 0)).toBe(60_000);
+    expect(excludedCategories({ wantsDecor: true })).toEqual([]);
   });
 });

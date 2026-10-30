@@ -14,7 +14,7 @@ import {
   isVenue,
 } from '../lib/guards';
 import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
-import { buildBudget } from '../lib/budget';
+import { buildBudget, excludedCategories } from '../lib/budget';
 import { venueTypeOf } from '../lib/checklist';
 import { buildPlan } from '../lib/plan';
 import { readSharedPlan } from '../lib/share';
@@ -241,8 +241,21 @@ export function usePlanner() {
     revise(last.details, last.overrides, 'Undone — the plan is back to how it was.');
   };
 
-  /** Applies the look read from an inspiration photo: new colours, and fresh décor only. */
-  const applyLook = (look: { colors: string; note: string }) => {
+  /** Turns décor planning on or off: the décor budget and decorator tasks follow, the ideas stay. */
+  const setDecor = (on: boolean) => {
+    const before = snapshot();
+    if (!details || !before || details.wantsDecor === on) return;
+    setHistory((h) => [...h, before].slice(-10));
+    // Money the user put into décor goes back into the split when décor is turned off.
+    const nextOverrides = on
+      ? overrides
+      : Object.fromEntries(Object.entries(overrides).filter(([id]) => id !== 'decor'));
+    setOverrides(nextOverrides);
+    revise({ ...details, wantsDecor: on }, nextOverrides);
+  };
+
+  /** Applies a look (from an inspiration photo or a suggested look): new colours, and fresh décor only. */
+  const applyLook = (look: { colors: string; note: string; message?: string }) => {
     const before = snapshot();
     if (!details || !before) return;
     const result = validateEventDetails(
@@ -251,14 +264,17 @@ export function usePlanner() {
         colors: look.colors,
         // Replace any earlier photo note rather than piling them up.
         preferences:
-          `${details.preferences.replace(/Inspired by a photo:[^.]*\.?/g, '').trim()} ${look.note}.`.trim(),
+          `${details.preferences.replace(/(Inspired by a photo|Chosen décor look):[^.]*\.?/g, '').trim()} ${look.note}.`.trim(),
       },
       details.date < today ? details.date : today,
     );
     if (!result.ok) return;
     setHistory((h) => [...h, before].slice(-10));
-    revise(result.value, overrides, 'New colours from your photo — refreshing the décor only.', (d) =>
-      refreshSection('decor', undefined, d),
+    revise(
+      result.value,
+      overrides,
+      look.message ?? 'New colours from your photo — refreshing the décor only.',
+      (d) => refreshSection('decor', undefined, d),
     );
   };
 
@@ -428,6 +444,7 @@ export function usePlanner() {
     undo,
     shared: { details: shared, open: openShared, dismiss: dismissShared },
     applyLook,
+    setDecor,
     chooseVenue,
     chosenVenue,
     venueLinkError,
@@ -447,7 +464,14 @@ export function usePlanner() {
       /** Saves a whole new split; only amounts that differ from the suggestion count as the user's own. */
       setAmounts: (amounts: Record<string, number>) => {
         if (!details) return;
-        const suggested = buildBudget(details.eventType, details.budget, details.guests, details.priorities);
+        const suggested = buildBudget(
+          details.eventType,
+          details.budget,
+          details.guests,
+          details.priorities,
+          {},
+          excludedCategories(details),
+        );
         setOverrides(
           Object.fromEntries(
             suggested.lines

@@ -1,4 +1,4 @@
-import type { CeremonyIdea, EventDetails, EventType, Ideas, IdeasSection } from '../types.js';
+import type { CeremonyIdea, DecorLook, EventDetails, EventType, Ideas, IdeasSection } from '../types.js';
 import { cleanList, cleanObjects, toObject } from './aiOutput.js';
 import { ceremoniesFor, defaultMenu, traditionOf, validateMenu } from './culture/index.js';
 import { cleanText } from './validation.js';
@@ -31,6 +31,27 @@ const CEREMONIES_SCHEMA = {
   },
 } as const;
 
+const LOOKS_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      name: { type: 'STRING' },
+      palette: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: { name: { type: 'STRING' }, hex: { type: 'STRING', description: '#rrggbb' } },
+          required: ['name', 'hex'],
+        },
+      },
+      decor: { type: 'ARRAY', items: { type: 'STRING' } },
+      why: { type: 'STRING' },
+    },
+    required: ['name', 'palette', 'decor', 'why'],
+  },
+} as const;
+
 const MENU_SCHEMA = {
   type: 'ARRAY',
   items: {
@@ -49,13 +70,18 @@ export const IDEAS_SCHEMAS: Record<IdeasSection | 'all', object> = {
     properties: {
       summary: { type: 'STRING' },
       ceremonies: CEREMONIES_SCHEMA,
+      looks: LOOKS_SCHEMA,
       menu: MENU_SCHEMA,
       activities: LIST,
       budgetTips: LIST,
     },
     required: ['summary', 'ceremonies', 'menu', 'activities', 'budgetTips'],
   },
-  decor: { type: 'OBJECT', properties: { ceremonies: CEREMONIES_SCHEMA }, required: ['ceremonies'] },
+  decor: {
+    type: 'OBJECT',
+    properties: { ceremonies: CEREMONIES_SCHEMA, looks: LOOKS_SCHEMA },
+    required: ['ceremonies'],
+  },
   menu: { type: 'OBJECT', properties: { menu: MENU_SCHEMA }, required: ['menu'] },
   extras: {
     type: 'OBJECT',
@@ -118,6 +144,24 @@ export function parseIdeas(
   if (!section || section === 'decor') {
     out.ceremonies = parseCeremonies(obj.ceremonies, details);
     if (out.ceremonies.length === 0) return null;
+    if (details.eventType !== 'wedding') {
+      // Always three distinct looks; any the model missed come from the trend list.
+      const looks = cleanObjects(obj.looks, 3, (o) => {
+        const look = {
+          name: cleanText(o.name, 50),
+          palette: cleanPalette(o.palette),
+          decor: cleanList(o.decor, 4, ITEM_MAX),
+          why: cleanText(o.why, 160),
+        };
+        return look.name && look.palette.length > 0 && look.decor.length > 0 ? look : null;
+      });
+      // Without looks from the model, its own décor idea leads, then the trends.
+      const own = out.ceremonies[0];
+      if (looks.length === 0 && own && own.palette.length > 0 && own.decor.length > 0)
+        looks.push({ name: own.theme, palette: own.palette, decor: own.decor, why: 'Made for your event.' });
+      const extra = fallbackLooks(details).filter((f) => !looks.some((l) => l.name === f.name));
+      out.looks = [...looks, ...extra].slice(0, 3);
+    }
   }
   if (!section || section === 'menu') {
     if (!Array.isArray(obj.menu)) return null;
@@ -205,6 +249,233 @@ export function coloursFromText(text: string): { name: string; hex: string }[] {
   return found.length >= 2 ? found.slice(0, 4) : [];
 }
 
+type LookSeed = [name: string, palette: [string, string][], decor: string[], why: string];
+
+const look = ([name, palette, decor, why]: LookSeed): DecorLook => ({
+  name,
+  palette: palette.map(([n, hex]) => ({ name: n, hex })),
+  decor,
+  why,
+});
+
+/** Popular looks right now, by kind of event and venue — used when the user gives no style. */
+const TREND_LOOKS: Record<string, LookSeed[]> = {
+  kids: [
+    [
+      'Pastel balloon garland',
+      [
+        ['Blush pink', '#f4c2c2'],
+        ['Mint', '#b8e0d2'],
+        ['Lilac', '#c8b6e2'],
+      ],
+      [
+        'An organic balloon garland over the cake table',
+        'Pastel paper fans on the backdrop',
+        'A name sign in soft lettering',
+      ],
+      'The most-booked look for kids’ parties this year — soft, photogenic and easy to set up.',
+    ],
+    [
+      'Jungle safari',
+      [
+        ['Leaf green', '#4f7a28'],
+        ['Sand', '#e4c99b'],
+        ['Sunny yellow', '#f2c94c'],
+      ],
+      [
+        'Palm-leaf backdrop with animal cut-outs',
+        'Safari hats and binocular favours',
+        'Green and gold balloon cluster',
+      ],
+      'A playful theme kids love, with props that double as games.',
+    ],
+    [
+      'Space explorer',
+      [
+        ['Midnight navy', '#1e2a4a'],
+        ['Silver', '#c0c6cf'],
+        ['Rocket orange', '#f08a24'],
+      ],
+      ['Planet balloons hung at different heights', 'Star-print table runner', 'A rocket photo frame'],
+      'Big with curious kids — glow-in-the-dark stars make the evening magical.',
+    ],
+  ],
+  young: [
+    [
+      'Neon glow night',
+      [
+        ['Neon pink', '#ff3ea5'],
+        ['Electric blue', '#2d7ff9'],
+        ['Black', '#111111'],
+      ],
+      [
+        'A neon sign with the name or an inside joke',
+        'UV-reactive balloons',
+        'Glow sticks and LED table lights',
+      ],
+      'Popular with teens and twenty-somethings for evening parties.',
+    ],
+    [
+      'Boho sunset',
+      [
+        ['Terracotta', '#c8643c'],
+        ['Sand', '#e4c99b'],
+        ['Sage', '#9caf88'],
+      ],
+      ['Pampas grass in clay vases', 'Macramé backdrop with fairy lights', 'Low floor seating with cushions'],
+      'A warm, Instagram-friendly look that suits cafés and terraces.',
+    ],
+    [
+      'Minimal monochrome',
+      [
+        ['Black', '#111111'],
+        ['White', '#ffffff'],
+        ['Gold', '#c9a227'],
+      ],
+      ['Marquee number lights', 'Black-and-white balloon cluster with gold confetti', 'A simple photo wall'],
+      'Clean and modern — looks expensive on a modest budget.',
+    ],
+  ],
+  venue: [
+    [
+      'Table-top florals',
+      [
+        ['Blush pink', '#e8b4b8'],
+        ['Ivory', '#f6efe2'],
+        ['Sage', '#9caf88'],
+      ],
+      [
+        'Fresh blooms in bud vases along the table',
+        'Name cards at each seat',
+        'A small floral ring behind the cake',
+      ],
+      'Light touches that suit a café or restaurant without fighting its own look.',
+    ],
+    [
+      'Balloon corner',
+      [
+        ['Champagne', '#e8d5b5'],
+        ['Dusty rose', '#c48b9f'],
+        ['White', '#ffffff'],
+      ],
+      [
+        'One balloon cluster in a corner for photos',
+        'A cake-topper and candles set',
+        'A small “Happy Birthday” sign',
+      ],
+      'Quick to set up and remove — most cafés allow it.',
+    ],
+    [
+      'Fairy lights & polaroids',
+      [
+        ['Warm white', '#fff4d6'],
+        ['Kraft brown', '#b08968'],
+        ['Black', '#111111'],
+      ],
+      [
+        'A string of fairy lights with clipped photos',
+        'An instant camera for a guest photo wall',
+        'Tea-light candles on the tables',
+      ],
+      'A cosy, personal look that works in any dine-in space.',
+    ],
+  ],
+  community: [
+    [
+      'Festive marigold & bunting',
+      [
+        ['Marigold', '#f2a900'],
+        ['Vermilion', '#c1121f'],
+        ['Leaf green', '#4f7a28'],
+      ],
+      [
+        'Marigold strings at the entrance and stage',
+        'Colourful paper bunting over the stalls',
+        'Rangoli at the gate',
+      ],
+      'The classic, joyful look everyone recognises.',
+    ],
+    [
+      'Eco-friendly earthy',
+      [
+        ['Bamboo', '#c2b280'],
+        ['Jute', '#a68a64'],
+        ['Clay', '#b5651d'],
+      ],
+      ['Bamboo and jute stall frames', 'Earthen diyas and potted plants', 'Reusable cloth banners'],
+      'Growing in popularity — low waste and lower cost.',
+    ],
+    [
+      'Lantern lane',
+      [
+        ['Lantern red', '#b3261e'],
+        ['Warm gold', '#e0a526'],
+        ['Night blue', '#1f3a5f'],
+      ],
+      ['Paper lanterns along the walkways', 'Fairy-light canopies over seating', 'A lit stage arch'],
+      'Makes an evening event glow and feel special.',
+    ],
+  ],
+  corporate: [
+    [
+      'Brand-colour minimal',
+      [
+        ['Navy', '#1e3a5f'],
+        ['White', '#ffffff'],
+        ['Brand accent', '#0ea5e9'],
+      ],
+      [
+        'Branded stage backdrop and standees',
+        'Clean signage for halls and registration',
+        'Simple centrepieces in brand colours',
+      ],
+      'Professional and on-brand — the safest choice for most corporate events.',
+    ],
+    [
+      'Green & wood',
+      [
+        ['Forest green', '#2f5d50'],
+        ['Oak', '#c19a6b'],
+        ['Off-white', '#f4efe1'],
+      ],
+      ['Potted plants instead of cut flowers', 'Wooden signage and name stands', 'Recycled-paper badges'],
+      'Sustainable events are a rising trend in Indian corporates.',
+    ],
+    [
+      'Gala night',
+      [
+        ['Black', '#111111'],
+        ['Gold', '#c9a227'],
+        ['Deep plum', '#4a1942'],
+      ],
+      ['Warm uplighting on the walls', 'Gold-accented tables with candles', 'A red-carpet photo wall'],
+      'For awards nights and annual days that should feel special.',
+    ],
+  ],
+};
+
+/** Three looks for a single-function event, from the user's colours or current trends. */
+export function fallbackLooks(details: EventDetails): DecorLook[] {
+  const own = coloursFromText(details.colors);
+  const key =
+    details.venueType === 'cafe' || details.venueType === 'restaurant'
+      ? 'venue'
+      : details.eventType === 'birthday'
+        ? details.ageGroup === 'kids'
+          ? 'kids'
+          : 'young'
+        : details.eventType === 'corporate'
+          ? 'corporate'
+          : 'community';
+  return TREND_LOOKS[key].map((seed, i) => {
+    const base = look(seed);
+    // The user's own colours lead the first look.
+    return i === 0 && own.length > 0
+      ? { ...base, palette: own, why: 'Built around the colours you chose.' }
+      : base;
+  });
+}
+
 /** Deterministic ideas straight from the knowledge base, used when Gemini is unavailable. */
 export function fallbackIdeas(details: EventDetails): Ideas {
   const who = details.title || `your ${LABELS[details.eventType]}`;
@@ -221,6 +492,7 @@ export function fallbackIdeas(details: EventDetails): Ideas {
     summary: `A ${style}plan for ${who} in ${details.city} for ${details.guests} guests, built from traditional décor and menus. Change any part to make it yours.`,
     ceremonies,
     menu: defaultMenu(details),
+    ...(details.eventType === 'wedding' ? {} : { looks: fallbackLooks(details) }),
     ...EXTRAS[details.eventType],
     source: 'fallback',
   };

@@ -129,20 +129,92 @@ export function nameSimilarity(a: string, b: string): number {
   return 1 - levenshtein(x, y) / Math.max(x.length, y.length);
 }
 
+/** Words that don't identify a place ("and" vs "N", "the", "&"). */
+const FILLER = new Set(['and', 'n', 'the', 'of', 'a', 'at', 'in', 'near', 'by']);
+
+const words = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize('NFKD')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && !FILLER.has(w));
+
+/** The name the user meant, without the city they typed with it ("Bubble and Tea, kolkata", "… habra"). */
+export function coreName(name: string, city: string): string {
+  const cityWords = new Set([...words(city), 'india']);
+  const kept = name
+    .replace(/[,|]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w && !cityWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  return kept.length > 0 ? kept.join(' ').trim() : name.trim();
+}
+
+/**
+ * A sound-alike key for Indian spellings, so "banket" matches "banquet",
+ * "shibalay" matches "shibaloy" and "chai" matches "chaai".
+ */
+export function soundKey(word: string): string {
+  return word
+    .toLowerCase()
+    .replace(/qu/g, 'k')
+    .replace(/q/g, 'k')
+    .replace(/ck/g, 'k')
+    .replace(/ph/g, 'f')
+    .replace(/w/g, 'v')
+    .replace(/z/g, 'j')
+    .replace(/ee/g, 'i')
+    .replace(/oo/g, 'u')
+    .replace(/y/g, 'i')
+    .replace(/(.)\1+/g, '$1')
+    .replace(/(?<=[a-z])h/g, '')
+    .replace(/[aeiou]+$/, '');
+}
+
+const sameWord = (a: string, b: string) =>
+  a === b ||
+  soundKey(a) === soundKey(b) ||
+  (a.length > 3 && b.length > 3 && nameSimilarity(soundKey(a), soundKey(b)) >= 0.75);
+
+/**
+ * How well a place matches what the user typed, the way a search engine
+ * would judge it: the meaningful words typed appear in the name (in any
+ * order, allowing sound-alike spellings), extra words in the real name are
+ * fine ("Bubble and Tea" → "Bubble N Tea Asian Cafe"), and area words typed
+ * after the name may instead appear in the address ("arsalan park street").
+ */
+export function matchScore(typed: string, candidate: string, address = ''): number {
+  const want = words(typed);
+  const have = words(candidate);
+  if (want.length === 0 || have.length === 0) return 0;
+  const inName = want.filter((w) => have.some((h) => sameWord(w, h)));
+  const typedCoverage = inName.length / want.length;
+  // Every word of the real name was typed; the rest of what was typed describes where it is.
+  const nameCovered = have.every((h) => want.some((w) => sameWord(w, h)));
+  const place = words(address);
+  const restInAddress = want
+    .filter((w) => !inName.includes(w))
+    .every((w) => place.some((p) => sameWord(w, p)));
+  // Typed name-first ("arsalan park street") means the rest is the area, even if the map's address differs.
+  const nameFirst = sameWord(want[0], have[0]);
+  const located =
+    nameCovered && have.join('').length >= 4 ? (restInAddress ? 0.95 : nameFirst ? 0.8 : 0.6) : 0;
+  return Math.max(typedCoverage, located, nameSimilarity(typed, candidate));
+}
+
 interface PhotonFeature {
   geometry?: { coordinates?: [number, number] };
   properties?: Record<string, string | number | undefined>;
 }
 
-/** Typo-tolerant name search across India, biased towards (but not limited to) the event city. */
-async function fuzzyLookup(
-  name: string,
+/** Photon results (typo-tolerant) as venues, in India only. */
+async function photonSearch(
+  query: string,
   city: string,
   near: { lat: number; lon: number } | null,
   fetchImpl: typeof fetch,
 ): Promise<Venue[]> {
   const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
-  const data = (await getJson(`${PHOTON}?limit=10${bias}&q=${encodeURIComponent(name)}`, fetchImpl)) as {
+  const data = (await getJson(`${PHOTON}?limit=15${bias}&q=${encodeURIComponent(query)}`, fetchImpl)) as {
     features?: PhotonFeature[];
   };
   return (data.features ?? []).flatMap((f) => {
@@ -150,11 +222,12 @@ async function fuzzyLookup(
     const found = cleanText(props.name, 100);
     const [lon, lat] = f.geometry?.coordinates ?? [];
     if (props.countrycode !== 'IN' || !found || !Number.isFinite(lat) || !Number.isFinite(lon)) return [];
-    // Only near-identical names count, so a "Shibaloy" temple is not taken for "Shibaloy Garden".
-    if (nameSimilarity(found, name) < 0.8) return [];
+    // Roads, stations and land areas share names with venues but are never one.
+    if (NOT_VENUES.has(String(props.osm_key ?? ''))) return [];
     const address = [props.street, props.district, props.city ?? props.county, props.state]
       .filter((p) => typeof p === 'string' && p)
       .join(', ');
+    const type = props.osm_type === 'W' ? 'way' : props.osm_type === 'R' ? 'relation' : 'node';
     return [
       {
         name: found,
@@ -163,36 +236,149 @@ async function fuzzyLookup(
         lat: Number(lat),
         lon: Number(lon),
         mapsUrl: mapsSearch(found, String(props.city ?? city)),
-        osmUrl: `https://www.openstreetmap.org/${props.osm_type === 'W' ? 'way' : props.osm_type === 'R' ? 'relation' : 'node'}/${props.osm_id ?? ''}`,
-        match: nameSimilarity(found, name) < 1 ? 'Closest spelling match' : undefined,
+        osmUrl: `https://www.openstreetmap.org/${type}/${props.osm_id ?? ''}`,
       },
     ];
   });
 }
 
+/** Far-away places with the same name are someone else's venue. */
+const MAX_VENUE_KM = 80;
+
 /**
- * Looks up a named venue. Tries the name with the event city, then the name
- * anywhere in India (a good banquet can be far from home), then a
- * typo-tolerant search. Returns matches, or an empty list if it is not on
- * the open map.
+ * Looks up a named venue like a search engine would: strips the city from
+ * the name, matches the meaningful words in any order with small spelling
+ * slips allowed, and ranks the best match nearest the event city first.
+ * Uses Google Places when a key is configured, otherwise OpenStreetMap
+ * (Nominatim and the typo-tolerant Photon). Empty if nothing matches.
  */
 export async function checkVenue(
   name: string,
   city: string,
   fetchImpl: typeof fetch = fetch,
   pause: (ms: number) => Promise<unknown> = wait,
+  placesKey?: string,
 ): Promise<Venue[]> {
-  const search = (q: string) =>
-    getJson(`${NOMINATIM}?format=jsonv2&limit=5&countrycodes=in&q=${encodeURIComponent(q)}`, fetchImpl);
-  const close = (venues: Venue[]) => venues.filter((v) => nameSimilarity(v.name, name) >= 0.6);
-
-  const inCity = close(toVenues(await search(`${name}, ${city}`), city, name));
-  if (inCity.length > 0) return inCity;
-  await pause(SPACING_MS);
-  const anywhere = close(toVenues(await search(name), city));
-  if (anywhere.length > 0) return anywhere;
+  const core = coreName(name, city);
   const near = await geocodeCity(city, fetchImpl).catch(() => null);
-  return fuzzyLookup(name, city, near, fetchImpl);
+  if (placesKey) {
+    const found = await googleTextSearch(`${core} ${city}`, near, placesKey, fetchImpl);
+    if (found.length > 0) return rankMatches(found, core, near);
+  }
+  const nominatim = (q: string) =>
+    getJson(`${NOMINATIM}?format=jsonv2&limit=8&countrycodes=in&q=${encodeURIComponent(q)}`, fetchImpl).then(
+      (d) =>
+        toVenues(
+          Array.isArray(d) ? d.filter((h) => isHit(h) && !NOT_VENUES.has(h.category ?? '')) : [],
+          city,
+        ),
+    );
+  const pool: Venue[] = [];
+  await pause(SPACING_MS);
+  pool.push(...(await nominatim(`${core}, ${city}`)));
+  if (rankMatches(pool, core, near).length === 0) {
+    await pause(SPACING_MS);
+    pool.push(...(await nominatim(core)));
+    pool.push(...(await photonSearch(core, city, near, fetchImpl)));
+    const plain = words(core).join(' ');
+    if (plain !== core.toLowerCase()) pool.push(...(await photonSearch(plain, city, near, fetchImpl)));
+  }
+  return rankMatches(pool, core, near);
+}
+
+/** Keeps good matches near the event city, best and closest first, without duplicates. */
+function rankMatches(pool: Venue[], typed: string, near: { lat: number; lon: number } | null): Venue[] {
+  const seen = new Set<string>();
+  return pool
+    .map((v) => ({
+      v,
+      score: matchScore(typed, v.name, v.address),
+      km: near ? distanceKm(near.lat, near.lon, v.lat, v.lon) : 0,
+    }))
+    .filter(({ v, score, km }) => {
+      const key = `${v.name.toLowerCase()}|${v.lat.toFixed(3)}`;
+      if (score < 0.75 || km > MAX_VENUE_KM || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => b.score - a.score || a.km - b.km)
+    .slice(0, 5)
+    .map(({ v, score, km }) => ({
+      ...v,
+      ...(near ? { distanceKm: km } : {}),
+      ...(score < 1 || simplify(v.name) !== simplify(typed) ? { match: 'Closest match' } : {}),
+    }));
+}
+
+const PLACES_SEARCH = 'https://places.googleapis.com/v1/places:searchText';
+
+interface GooglePlace {
+  id?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
+  rating?: number;
+  userRatingCount?: number;
+  primaryTypeDisplayName?: { text?: string };
+}
+
+/**
+ * Google Places text search — the same fuzzy matching and "best near me"
+ * ranking as the Maps app, with ratings. Used only when GOOGLE_MAPS_API_KEY
+ * is configured on the server.
+ */
+export async function googleTextSearch(
+  query: string,
+  near: { lat: number; lon: number } | null,
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+  radiusKm = 25,
+): Promise<Venue[]> {
+  const res = await fetchImpl(PLACES_SEARCH, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask':
+        'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName',
+    },
+    body: JSON.stringify({
+      textQuery: query,
+      regionCode: 'IN',
+      languageCode: 'en',
+      maxResultCount: 20,
+      ...(near
+        ? {
+            locationBias: {
+              circle: { center: { latitude: near.lat, longitude: near.lon }, radius: radiusKm * 1000 },
+            },
+          }
+        : {}),
+    }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) throw new VenueLookupError(`Places responded with ${res.status}`);
+  const data = (await res.json()) as { places?: GooglePlace[] };
+  return (data.places ?? []).flatMap((p) => {
+    const name = cleanText(p.displayName?.text, 100);
+    const lat = Number(p.location?.latitude);
+    const lon = Number(p.location?.longitude);
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    const id = typeof p.id === 'string' && /^[\w-]+$/.test(p.id) ? p.id : '';
+    return [
+      {
+        name,
+        kind: cleanText(p.primaryTypeDisplayName?.text, 40).toLowerCase() || 'place',
+        address: cleanText(p.formattedAddress?.replace(/, India$/, ''), 200),
+        lat,
+        lon,
+        mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}${id ? `&query_place_id=${id}` : ''}`,
+        osmUrl: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`,
+        ...(typeof p.rating === 'number' ? { rating: Math.round(p.rating * 10) / 10 } : {}),
+        ...(typeof p.userRatingCount === 'number' ? { reviews: p.userRatingCount } : {}),
+      },
+    ];
+  });
 }
 
 const MAPS_HOSTS = new Set([
@@ -375,7 +561,26 @@ export interface VenueSearch {
   centre?: Area;
   /** How far around the centre to look. */
   radiusKm?: number;
+  /** Google Places key — when set, results are Google's, ranked like "best … near me". */
+  placesKey?: string;
 }
+
+/** Plain words for each venue type, for a Google-style "best … near" search. */
+const TYPE_QUERY: Record<VenueType, string> = {
+  undecided: 'event venues',
+  banquet: 'banquet halls',
+  outdoor: 'lawns and garden venues',
+  home: 'party venues',
+  'community-hall': 'community halls',
+  temple: 'marriage halls',
+  restaurant: 'restaurants for parties',
+  cafe: 'cafes',
+  hotel: 'hotels with banquet halls',
+  office: 'conference venues',
+};
+
+/** Google-style popularity: a great rating backed by many reviews ranks first. */
+const popularity = (v: Venue) => (v.rating ?? 0) * Math.log10((v.reviews ?? 0) + 10);
 
 /**
  * Venues around a city, town or district that best match the kind of place
@@ -393,9 +598,26 @@ export async function findVenues(
     pause = wait,
     centre,
     radiusKm = 12,
+    placesKey,
   }: VenueSearch = {},
 ): Promise<Venue[]> {
-  const { lat, lon } = centre ?? (await geocodeCity(city, fetchImpl));
+  const area = centre ?? (await geocodeCity(city, fetchImpl));
+  const { lat, lon } = area;
+  if (placesKey) {
+    const what = preference.trim() || TYPE_QUERY[venueType];
+    const places = await googleTextSearch(
+      `best ${what} near ${area.name}`,
+      area,
+      placesKey,
+      fetchImpl,
+      radiusKm,
+    );
+    return places
+      .map((v) => ({ ...v, distanceKm: distanceKm(lat, lon, v.lat, v.lon) }))
+      .filter((v) => v.distanceKm <= radiusKm * 1.5)
+      .sort((a, b) => popularity(b) - popularity(a) || a.distanceKm - b.distanceKm)
+      .slice(0, limit);
+  }
   const box = radiusKm * KM;
   const viewbox = [lon - box, lat + box, lon + box, lat - box].join(',');
   const searches = searchesFor(venueType, preference);
@@ -404,10 +626,12 @@ export async function findVenues(
   for (const [rank, query] of searches.entries()) {
     if (found.size >= ENOUGH) break;
     await pause(SPACING_MS);
-    const url = `${NOMINATIM}?format=jsonv2&limit=20&bounded=1&viewbox=${viewbox}&q=${encodeURIComponent(query)}`;
+    const url = `${NOMINATIM}?format=jsonv2&limit=20&bounded=1&extratags=1&viewbox=${viewbox}&q=${encodeURIComponent(query)}`;
     const data = await getJson(url, fetchImpl);
     const hits = Array.isArray(data) ? data.filter((h) => isHit(h) && !NOT_VENUES.has(h.category ?? '')) : [];
-    for (const venue of toVenues(hits, city)) {
+    for (const hit of hits) {
+      const venue = toVenues([hit], city)[0];
+      if (!venue) continue;
       // Name searches can match shops or flats; keep places whose name carries the word or sounds like a venue.
       const byName = !query.startsWith('[');
       if (byName && !venue.name.toLowerCase().includes(query.split(' ')[0]) && !EVENT_NAME.test(venue.name))
@@ -416,7 +640,17 @@ export async function findVenues(
       if (found.has(key)) continue;
       const text = `${venue.name} ${venue.kind}`.toLowerCase();
       const matched = words.filter((w) => text.includes(w));
-      const score = matched.length * 3 + Math.max(0, searches.length - rank);
+      // Established places usually list a website, phone, opening hours or cuisine on the map.
+      const tags = (hit as { extratags?: Record<string, string> | null }).extratags ?? {};
+      const established = [
+        'website',
+        'contact:website',
+        'phone',
+        'contact:phone',
+        'opening_hours',
+        'cuisine',
+      ].filter((k) => tags[k]).length;
+      const score = matched.length * 3 + Math.max(0, searches.length - rank) + Math.min(established, 3);
       found.set(key, {
         ...venue,
         distanceKm: distanceKm(lat, lon, venue.lat, venue.lon),

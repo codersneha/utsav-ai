@@ -126,6 +126,7 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
   );
   const [venueName, setVenueName] = useState(initial?.venueName ?? '');
   const [venuePreference, setVenuePreference] = useState(initial?.venuePreference ?? '');
+  const [wantsDecor, setWantsDecor] = useState(initial?.wantsDecor ?? true);
   const [errors, setErrors] = useState<FieldErrors>({});
   const summaryRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -149,6 +150,7 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
     ceremonies,
     venueName,
     venuePreference,
+    wantsDecor,
   };
 
   const chooseTradition = (t: TraditionId) => {
@@ -457,13 +459,18 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
 
         {step === 2 && (
           <>
-            <div className="grid-2">
+            <div className="grid-2 form-row">
               <div className="field">
                 <label htmlFor="venueType">Venue type</label>
                 <select
                   id="venueType"
                   value={venueType}
-                  onChange={(e) => setVenueType(e.target.value as VenueType)}
+                  onChange={(e) => {
+                    const next = e.target.value as VenueType;
+                    setVenueType(next);
+                    // Cafés and restaurants have their own look; décor stays the user's choice.
+                    if (next === 'restaurant' || next === 'cafe') setWantsDecor(false);
+                  }}
                 >
                   {VENUE_TYPES.map((v) => (
                     <option key={v} value={v}>
@@ -473,7 +480,7 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="ageGroup">Who are the guests?</label>
+                <label htmlFor="ageGroup">Guests are mostly</label>
                 <select
                   id="ageGroup"
                   value={ageGroup}
@@ -486,30 +493,32 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                   ))}
                 </select>
               </div>
-              <div className="field">
-                <label htmlFor="venuePreference">What kind of venue would you like?</label>
-                <input
-                  id="venuePreference"
-                  value={venuePreference}
-                  maxLength={LIMITS.venueMax}
-                  placeholder="e.g. rooftop with dine-in, garden with a banquet hall"
-                  aria-describedby="venuePreference-hint"
-                  onChange={(e) => setVenuePreference(e.target.value)}
-                />
-                <p id="venuePreference-hint" className="hint">
-                  We use this to find the closest matches near you.
-                </p>
-              </div>
-              <div className="field">
-                <label htmlFor="venueName">Venue name or Google Maps link, if booked</label>
-                <input
-                  id="venueName"
-                  value={venueName}
-                  maxLength={LIMITS.venueLinkMax}
-                  placeholder="e.g. Shibaloy Garden, or paste its maps.app.goo.gl link"
-                  onChange={(e) => setVenueName(e.target.value)}
-                />
-              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="venueName">Venue, if booked</label>
+              <input
+                id="venueName"
+                value={venueName}
+                maxLength={LIMITS.venueLinkMax}
+                placeholder="Its name (e.g. Bubble and Tea, Kolkata) or a Google Maps link"
+                onChange={(e) => setVenueName(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="venuePreference">Kind of venue you’d like</label>
+              <input
+                id="venuePreference"
+                value={venuePreference}
+                maxLength={LIMITS.venueMax}
+                placeholder="e.g. rooftop with dine-in, garden with a banquet hall"
+                aria-describedby="venuePreference-hint"
+                onChange={(e) => setVenuePreference(e.target.value)}
+              />
+              <p id="venuePreference-hint" className="hint">
+                We use this to find the closest matches near you.
+              </p>
+            </div>
+            <div className="grid-2 form-row">
               <div className="field">
                 <label htmlFor="colors">Colour palette</label>
                 <input
@@ -519,6 +528,26 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                   placeholder="e.g. marigold and maroon"
                   onChange={(e) => setColors(e.target.value)}
                 />
+              </div>
+              <div className="field">
+                <span className="field-label" id="decor-label">
+                  Décor
+                </span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-labelledby="decor-label"
+                    aria-describedby="decor-hint"
+                    checked={wantsDecor}
+                    onChange={() => setWantsDecor((v) => !v)}
+                  />
+                  <span className="switch-track" aria-hidden="true" />
+                  <span>{wantsDecor ? 'Plan décor' : 'No décor needed'}</span>
+                </label>
+                <p id="decor-hint" className="hint">
+                  Cafés and restaurants often need none — you’ll still see ideas.
+                </p>
               </div>
             </div>
             <fieldset>

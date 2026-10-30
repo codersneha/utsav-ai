@@ -31,6 +31,7 @@ export function sampleEvents(today: string): Sample[] {
         ceremonies: ['aiburobhat', 'gaye-holud', 'biye', 'bou-bhaat'],
         venueName: '',
         venuePreference: '',
+        wantsDecor: true,
       },
     },
     {
@@ -54,6 +55,7 @@ export function sampleEvents(today: string): Sample[] {
         ceremonies: [],
         venueName: '',
         venuePreference: '',
+        wantsDecor: true,
       },
     },
     {
@@ -77,6 +79,7 @@ export function sampleEvents(today: string): Sample[] {
         ceremonies: [],
         venueName: '',
         venuePreference: '',
+        wantsDecor: true,
       },
     },
   ];
