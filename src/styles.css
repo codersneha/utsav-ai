@@ -1825,6 +1825,11 @@ ul.plain {
   color: var(--text);
 }
 
+.stage-chosen {
+  background: var(--teal-soft);
+  color: var(--text);
+}
+
 .stage-booked {
   background: var(--teal-soft);
   color: var(--text);
@@ -2237,6 +2242,68 @@ ul.plain {
   .split-controls {
     justify-content: flex-end;
   }
+}
+
+.restaurant-menu {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.menu-steps {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.menu-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.order-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-table th,
+.order-table td {
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.order-table td:nth-child(n + 2) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.order-table thead th {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.order-table tbody th {
+  font-weight: 600;
+}
+
+.order-table .order-group th {
+  padding-top: 0.9rem;
+  font-family: var(--font-display);
+  color: var(--primary);
+}
+
+.typical-menu > summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
 }
 
 /* ---------- Guests ------------------------------------------------------- */

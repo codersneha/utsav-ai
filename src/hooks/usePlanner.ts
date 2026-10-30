@@ -14,6 +14,7 @@ import {
 } from '../lib/guards';
 import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
 import { buildBudget } from '../lib/budget';
+import { venueTypeOf } from '../lib/checklist';
 import { buildPlan } from '../lib/plan';
 import { readSharedPlan } from '../lib/share';
 import { isBoolean, isNumber, isRecordOf, isString, saveJson } from '../lib/storage';
@@ -27,6 +28,7 @@ import type {
   IdeasSection,
   Logistics,
   VendorEntry,
+  Venue,
 } from '../types';
 import { usePersistentState } from './usePersistentState';
 
@@ -363,7 +365,38 @@ export function usePlanner() {
     undo,
     shared: { details: shared, open: openShared, dismiss: dismissShared },
     applyLook,
-    chooseVenue: (venueName: string) => details && submit({ ...details, venueName }),
+    /** Makes a venue from the map the plan's venue and records it in the Venue vendor row. */
+    chooseVenue: (venue: Venue) => {
+      if (!details) return;
+      setVendors((list) => {
+        const others = list.map((e) =>
+          e.groupId === 'venue' && e.status === 'pending' && e.name !== venue.name
+            ? { ...e, status: 'shortlisted' as const }
+            : e,
+        );
+        const existing = others.find((e) => e.groupId === 'venue' && e.name === venue.name);
+        if (existing) return others.map((e) => (e === existing ? { ...e, status: 'pending' as const } : e));
+        return [
+          ...others,
+          {
+            id: newId('vendor'),
+            groupId: 'venue',
+            name: venue.name,
+            contact: '',
+            address: venue.address,
+            mapsUrl: venue.mapsUrl,
+            notes: 'Chosen as the venue — confirm the booking and update the status.',
+            quote: 0,
+            status: 'pending' as const,
+          },
+        ];
+      });
+      submit({
+        ...details,
+        venueName: venue.name,
+        venueType: venueTypeOf(venue.kind, venue.name) ?? details.venueType,
+      });
+    },
     ideas: { ...ideas, regenerate: regenerateIdeas, refine: refineIdeas, refreshSection, busySection },
     logistics,
     budget: {

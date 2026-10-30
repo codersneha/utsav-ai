@@ -151,7 +151,7 @@ export function buildLogisticsPrompt(details: EventDetails): string {
     '2) vendors: for each vendor id listed, up to 3 questions to ask that vendor before booking and up to 2 extra checklist tasks specific to this event (e.g. dietary needs, venue type, age group).',
     'Use only the vendor ids given. Do not invent vendor names or prices.',
     `Serving style: ${menuFor(details).service} Reflect it in the schedule (e.g. seated batches, not a buffet, when served).`,
-    `VENDORS: ${JSON.stringify(vendorGroupsFor(details.eventType))}`,
+    `VENDORS: ${JSON.stringify(vendorGroupsFor(details.eventType, details.venueType))}`,
     `EVENT_DATA: ${JSON.stringify(eventData(details))}`,
     languageRule(details),
   ]

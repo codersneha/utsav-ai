@@ -22,7 +22,7 @@ export function buildPlan(details: EventDetails, today: string, edits: PlanEdits
       edits.overrides,
     ),
     timeline: buildTimeline(details.eventType, details.date, today, edits.customTasks),
-    checklist: buildChecklist(details.eventType, edits.vendorAdvice),
+    checklist: buildChecklist(details.eventType, edits.vendorAdvice, details.venueType),
   };
 }
 

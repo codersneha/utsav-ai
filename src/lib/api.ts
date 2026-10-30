@@ -2,13 +2,14 @@ import type {
   ChangeProposal,
   ChatTurn,
   EventDetails,
+  PartyOrder,
   Ideas,
   IdeasSection,
   Inspiration,
   Logistics,
   Venue,
 } from '../types.js';
-import { isArrayOf, isIdeasPart, isInspiration, isLogistics, isVenue } from './guards.js';
+import { isArrayOf, isIdeasPart, isInspiration, isLogistics, isPartyOrder, isVenue } from './guards.js';
 import type { PreparedImage } from './image.js';
 import { fallbackIdeas } from './ideas.js';
 import { fallbackLogistics } from './logistics.js';
@@ -112,7 +113,7 @@ export function fetchLogistics(details: EventDetails, signal?: AbortSignal): Pro
     'logistics',
     // The server has already validated the model output; check the response shape.
     (raw) => (isLogistics(raw) && raw.daySchedule.length > 0 ? raw : null),
-    () => fallbackLogistics(details.eventType),
+    () => fallbackLogistics(details.eventType, details.venueType),
     signal,
   );
 }
@@ -260,3 +261,39 @@ export const findVenues = (
   city: string,
   { venueType = 'undecided', preference = '', near = '', radiusKm = 12 } = {},
 ) => venueRequest({ action: 'search', city, venueType, preference, near: near || city, radiusKm });
+
+export interface MenuScanResult {
+  order?: PartyOrder;
+  error?: string;
+}
+
+/** Reads a restaurant menu photo and plans the party order within the food budget. */
+export async function scanMenu(
+  details: EventDetails,
+  image: PreparedImage,
+  budget: number,
+): Promise<MenuScanResult> {
+  try {
+    const res = await postJson({
+      mode: 'menuScan',
+      details,
+      image: image.data,
+      mimeType: image.mimeType,
+      budget,
+    });
+    if (!res.ok) {
+      return {
+        error:
+          res.status === 503
+            ? 'AI is not configured here, so menus cannot be read.'
+            : res.status === 502
+              ? 'We couldn’t read a menu with prices in that photo — try a clearer, closer photo.'
+              : 'Could not read that menu just now — please try again.',
+      };
+    }
+    const data = (await res.json()) as { order?: unknown };
+    return isPartyOrder(data.order) ? { order: data.order } : { error: 'We couldn’t read that menu.' };
+  } catch {
+    return { error: 'You seem to be offline — reading a menu needs a connection.' };
+  }
+}

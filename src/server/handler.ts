@@ -12,6 +12,12 @@ import {
 import { buildBudget } from '../lib/budget.js';
 import { addDays, todayIso } from '../lib/dates.js';
 import { IDEAS_SCHEMAS, parseIdeas } from '../lib/ideas.js';
+import {
+  MENU_SCAN_SCHEMA,
+  buildMenuScanPrompt,
+  parsePartyOrder,
+  partyFoodBudget,
+} from '../lib/restaurantMenu.js';
 import { LOGISTICS_RESPONSE_SCHEMA, parseLogistics } from '../lib/logistics.js';
 import {
   SYSTEM_INSTRUCTION,
@@ -81,6 +87,7 @@ type Job =
   | { mode: 'venues' }
   | { mode: 'extract'; description: string; today: string }
   | { mode: 'vision'; image: { data: string; mimeType: string } }
+  | { mode: 'menuScan'; details: EventDetails; image: { data: string; mimeType: string }; budget: number }
   | { mode: 'ideas'; details: EventDetails; refinement?: Refinement; section?: IdeasSection }
   | { mode: 'logistics'; details: EventDetails }
   | { mode: 'ask'; details: EventDetails; question: string; history: ChatTurn[]; today: string };
@@ -108,6 +115,19 @@ function parseJob(payload: Record<string, unknown>, today: string): Job | { erro
   const details = result.value;
 
   switch (payload.mode) {
+    case 'menuScan': {
+      if (!isValidImage(payload.image, payload.mimeType, MAX_IMAGE_BODY_BYTES))
+        return { error: 'Invalid image' };
+      const given = Math.round(Number(payload.budget));
+      const budget =
+        Number.isFinite(given) && given > 0 ? Math.min(given, details.budget) : partyFoodBudget(details);
+      return {
+        mode: 'menuScan',
+        details,
+        image: { data: payload.image, mimeType: payload.mimeType as string },
+        budget,
+      };
+    }
     case 'ideas': {
       const section = SECTIONS.find((x) => x === payload.section);
       if (payload.section !== undefined && !section) return { error: 'Unknown section' };
@@ -176,6 +196,21 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
       if (!answer) return null;
       const proposal = parseProposal(obj?.proposal, details, job.today);
       return proposal ? { answer, proposal } : { answer };
+    }
+    case 'menuScan': {
+      const text = await generateText(
+        {
+          ...base,
+          prompt: buildMenuScanPrompt(job.details, job.budget),
+          image: job.image,
+          responseSchema: MENU_SCAN_SCHEMA,
+          temperature: 0.2,
+          maxOutputTokens: 8192,
+        },
+        fetchImpl,
+      );
+      const order = parsePartyOrder(text, job.details.guests, job.budget);
+      return order ? { order } : null;
     }
     case 'vision': {
       const text = await generateText(
@@ -282,7 +317,7 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
     return json(400, { error: 'Invalid JSON' });
   }
   // Only photo uploads may be large; every other request stays small.
-  if (payload.mode !== 'vision' && raw.length > MAX_BODY_BYTES)
+  if (payload.mode !== 'vision' && payload.mode !== 'menuScan' && raw.length > MAX_BODY_BYTES)
     return json(413, { error: 'Request too large' });
 
   // Allow one day of slack so users in any timezone can plan for "today".
@@ -301,7 +336,8 @@ export async function handleGenerate(request: Request, deps: HandlerDeps): Promi
   if (!deps.apiKey) return json(503, { error: 'AI is not configured' });
 
   // Ideas, logistics and extraction are deterministic enough to cache; chats and photos are not.
-  const cacheKey = job.mode === 'ask' || job.mode === 'vision' ? '' : JSON.stringify(job);
+  const cacheKey =
+    job.mode === 'ask' || job.mode === 'vision' || job.mode === 'menuScan' ? '' : JSON.stringify(job);
   const cached = cacheKey ? cache.get(cacheKey) : undefined;
   if (cached) return json(200, { ...(cached as object), cached: true });
 

@@ -111,6 +111,20 @@ export const sampleVenue = {
   osmUrl: 'https://www.openstreetmap.org/node/1',
 };
 
+export const sampleOrder = {
+  itemsRead: 12,
+  lines: [
+    { name: 'Paneer Tikka', category: 'starter', veg: true, price: 320, serves: 2, quantity: 5, cost: 1600 },
+    { name: 'Cold Coffee', category: 'drink', veg: true, price: 160, serves: 1, quantity: 15, cost: 2400 },
+  ],
+  total: 4000,
+  perHead: 267,
+  guests: 15,
+  budget: 9000,
+  trimmed: false,
+  note: 'Taxes not included.',
+};
+
 export const sampleInspiration = {
   theme: 'Garden marigold',
   mood: 'Sunny and relaxed',
@@ -130,6 +144,8 @@ export function apiResponder(answer = 'Book the venue first.') {
       payload = { extracted: { eventType: 'wedding', city: 'Lucknow', guests: 250, budget: 1_800_000 } };
     } else if (body.mode === 'venues') {
       payload = { venues: body.action === 'search' ? [sampleVenue] : [] };
+    } else if (body.mode === 'menuScan') {
+      payload = { order: sampleOrder };
     } else if (body.mode === 'vision') {
       payload = { inspiration: sampleInspiration };
     } else if (body.mode === 'logistics') {

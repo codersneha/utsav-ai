@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { axeViolations } from './test/axe';
-import { apiResponder } from './test/fixtures';
+import { apiResponder, birthdayDetails } from './test/fixtures';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- request bodies are free-form JSON
 type Body = Record<string, any>;
@@ -69,8 +69,8 @@ describe('venues', () => {
     );
     expect(await axeViolations(container)).toEqual([]);
     await user.click(choose);
-    expect(await screen.findByText('“Rajbari Banquet” is on the map.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Rajbari Banquet is your venue' })).toBeDisabled();
+    expect(await screen.findByText(/“Rajbari Banquet” is your venue/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Choose .* as the venue/ })).not.toBeInTheDocument();
   });
 });
 
@@ -155,5 +155,55 @@ describe('what if', () => {
     const steps = screen.getByRole('article', { name: 'Your next steps' });
     await user.click(within(steps).getByRole('button', { name: /Open guests/ }));
     expect(screen.getByRole('tab', { name: 'Guests' })).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
+describe('choosing a café as the venue', () => {
+  it('records the venue, clears the search, drops the caterer and plans from the menu photo', async () => {
+    const { user, fetchSpy } = await openBengaliSample();
+    await user.click(screen.getByRole('tab', { name: 'Vendors' }));
+    expect(screen.getByRole('group', { name: 'Caterer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Find places' }));
+    await user.click(await screen.findByRole('button', { name: 'Choose Rajbari Banquet as the venue' }));
+
+    // Search results are cleared and the venue shows in the Venue row as chosen.
+    expect(screen.queryByRole('button', { name: /Choose .* as the venue/ })).not.toBeInTheDocument();
+    expect(await screen.findByText(/“Rajbari Banquet” is your venue/)).toBeInTheDocument();
+    const venueRow = screen.getByRole('group', { name: 'Venue' });
+    expect(venueRow).toHaveTextContent('Chosen');
+    expect(venueRow).toHaveTextContent('Rajbari Banquet');
+    expect(sentBodies(fetchSpy).length).toBeGreaterThan(0);
+  });
+
+  it('reads a restaurant menu photo into a priced party order', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
+    window.localStorage.setItem(
+      'utsav-ai:v1:details',
+      JSON.stringify({
+        ...birthdayDetails,
+        title: 'Riya turns 16',
+        date: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        venueType: 'cafe',
+        venueName: 'Boho The Sky Cafe',
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Riya turns 16' });
+    await user.click(screen.getByRole('tab', { name: 'Vendors' }));
+    expect(screen.queryByRole('group', { name: 'Caterer' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Ideas' }));
+    const card = await screen.findByRole('region', { name: /Party order from Boho The Sky Cafe/ });
+    expect(within(card).getByRole('link', { name: /Open Boho The Sky Cafe on Google Maps/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('google.com/maps/search'),
+    );
+    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4])], 'menu.jpg', {
+      type: 'image/jpeg',
+    });
+    await user.upload(within(card).getByLabelText(/Add a menu photo/), photo);
+    expect(await within(card).findByText('Paneer Tikka')).toBeInTheDocument();
+    expect(within(card).getByRole('group', { name: 'Order cost' })).toHaveTextContent('₹4,000');
+    expect(sentBodies(fetchSpy).some((b) => b.mode === 'menuScan' && b.details.guests === 40)).toBe(true);
   });
 });

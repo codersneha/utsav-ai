@@ -6,6 +6,7 @@ import {
   mapsSearchUrl,
   summariseQuotes,
   vendorGroupsFor,
+  venueTypeOf,
 } from './checklist.js';
 
 describe('checklist', () => {
@@ -61,5 +62,24 @@ describe('vendor advice and records', () => {
     ];
     expect(summariseQuotes(entries, 'venue')).toEqual({ count: 3, lowest: 70_000, confirmed: entries[1] });
     expect(summariseQuotes(entries, 'decorator')).toEqual({ count: 0, lowest: 0, confirmed: undefined });
+  });
+});
+
+describe('restaurant and café venues', () => {
+  it('drop the separate caterer and plan the venue as venue and food', () => {
+    const groups = buildChecklist('birthday', {}, 'cafe');
+    expect(groups.some((g) => g.id === 'caterer')).toBe(false);
+    const venue = groups.find((g) => g.id === 'venue');
+    expect(venue?.vendor).toMatch(/Restaurant \/ café/);
+    expect(venue?.budgetId).toBe('catering');
+    expect(buildChecklist('birthday', {}, 'banquet').some((g) => g.id === 'caterer')).toBe(true);
+  });
+
+  it('guess the venue type from a map listing', () => {
+    expect(venueTypeOf('from Google Maps', 'Boho The Sky Cafe- Madhyamgram')).toBe('cafe');
+    expect(venueTypeOf('restaurant', 'Arsalan')).toBe('restaurant');
+    expect(venueTypeOf('events venue', 'Mangalik')).toBe('banquet');
+    expect(venueTypeOf('from Google Maps', 'Shibaloy Garden')).toBe('outdoor');
+    expect(venueTypeOf('hall', 'Something')).toBeNull();
   });
 });

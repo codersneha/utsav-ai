@@ -14,6 +14,8 @@ import { formatInr } from '../lib/plan';
 import { LIMITS } from '../lib/validation';
 import type { EventDetails, Ideas, IdeasSection } from '../types';
 import { InspirationCard } from './InspirationCard';
+import { RestaurantMenuCard } from './RestaurantMenuCard';
+import { isRestaurantVenue } from '../lib/checklist';
 
 interface Props {
   details: EventDetails;
@@ -305,14 +307,33 @@ export function IdeasPanel(props: Props) {
               <h3 id="menu-heading">The menu</h3>
               {busySection === 'menu' && <span className="pill">Updating menu…</span>}
             </div>
-            <SectionRefine
-              section="menu"
-              label="Change the menu"
-              placeholder="e.g. add ilish, lighter starters, winter sweets"
-              busy={loading}
-              onRefresh={props.onRefreshSection}
-            />
-            <MenuCard details={details} ideas={ideas} catering={props.catering} />
+            {isRestaurantVenue(details.venueType) ? (
+              <>
+                <RestaurantMenuCard details={details} catering={props.catering} />
+                <details className="card typical-menu">
+                  <summary>Typical party menu ideas, to compare with the restaurant’s menu</summary>
+                  <SectionRefine
+                    section="menu"
+                    label="Change the menu"
+                    placeholder="e.g. add ilish, lighter starters, winter sweets"
+                    busy={loading}
+                    onRefresh={props.onRefreshSection}
+                  />
+                  <MenuCard details={details} ideas={ideas} catering={props.catering} />
+                </details>
+              </>
+            ) : (
+              <>
+                <SectionRefine
+                  section="menu"
+                  label="Change the menu"
+                  placeholder="e.g. add ilish, lighter starters, winter sweets"
+                  busy={loading}
+                  onRefresh={props.onRefreshSection}
+                />
+                <MenuCard details={details} ideas={ideas} catering={props.catering} />
+              </>
+            )}
           </section>
 
           <section className="ideas-section" aria-labelledby="extras-heading" aria-busy={busy('extras')}>

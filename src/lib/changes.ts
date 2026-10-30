@@ -74,6 +74,11 @@ export function describeChanges(before: EventPlan, after: EventPlan, today: stri
   }
 
   if (a.city !== b.city) lines.push(`City changed to ${b.city}: vendor search links were updated.`);
+  if (a.venueType !== b.venueType && (b.venueType === 'restaurant' || b.venueType === 'cafe')) {
+    lines.push(
+      `The venue is a ${b.venueType === 'cafe' ? 'café' : 'restaurant'}, so it serves the food — no separate caterer needed.`,
+    );
+  }
   if (a.venuePreference !== b.venuePreference && b.venuePreference) {
     lines.push(`Venue preference: ${b.venuePreference}.`);
   }

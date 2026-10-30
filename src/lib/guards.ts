@@ -1,8 +1,10 @@
 import {
   GUEST_SIDES,
+  MENU_CATEGORIES,
   RSVP_STATUSES,
   VENDOR_STATUSES,
   type GuestEntry,
+  type PartyOrder,
   type ChatTurn,
   type CustomTask,
   type Ideas,
@@ -40,6 +42,8 @@ export const isVendorEntry = (v: unknown): v is VendorEntry =>
   isString(v.contact) &&
   (v.address === undefined || isString(v.address)) &&
   (v.notes === undefined || isString(v.notes)) &&
+  (v.mapsUrl === undefined ||
+    (isString(v.mapsUrl) && v.mapsUrl.startsWith('https://www.google.com/maps/'))) &&
   typeof v.quote === 'number' &&
   Number.isFinite(v.quote) &&
   VENDOR_STATUSES.includes(v.status as VendorEntry['status']);
@@ -140,3 +144,29 @@ export const isVenue = (v: unknown): v is Venue =>
   v.mapsUrl.startsWith('https://www.google.com/maps/') &&
   isString(v.osmUrl) &&
   v.osmUrl.startsWith('https://www.openstreetmap.org/');
+
+const isCount2 = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+
+/** A party order from a restaurant menu, as returned by the API or stored in the browser. */
+export const isPartyOrder = (v: unknown): v is PartyOrder =>
+  isObject(v) &&
+  isCount2(v.itemsRead) &&
+  isCount2(v.total) &&
+  isCount2(v.perHead) &&
+  isCount2(v.guests) &&
+  isCount2(v.budget) &&
+  typeof v.trimmed === 'boolean' &&
+  isString(v.note) &&
+  Array.isArray(v.lines) &&
+  v.lines.length > 0 &&
+  v.lines.every(
+    (l) =>
+      isObject(l) &&
+      isString(l.name) &&
+      MENU_CATEGORIES.includes(l.category as never) &&
+      typeof l.veg === 'boolean' &&
+      isCount2(l.price) &&
+      isCount2(l.serves) &&
+      isCount2(l.quantity) &&
+      isCount2(l.cost),
+  );

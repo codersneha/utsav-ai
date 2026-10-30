@@ -12,7 +12,7 @@ interface Props {
   venueType: VenueType;
   /** The user's own description of the place they want. */
   preference: string;
-  onChoose: (name: string) => void;
+  onChoose: (venue: Venue) => void;
 }
 
 const TYPE_WORDS: Partial<Record<VenueType, string>> = {
@@ -75,7 +75,7 @@ const isNullableVenue = (v: unknown): v is Venue | null => v === null || isVenue
 /** Checks the booked venue, takes a Google Maps link, or finds the closest matches to what the user wants. */
 export function VenuePanel({ city, venueName, venueType, preference, onChoose }: Props) {
   const [lookup, setLookup] = useState<{ key: string; venues: Venue[]; error?: string } | null>(null);
-  // A venue saved from a Google Maps link (many local venues are not on the open map).
+  // The chosen venue — from a search or a Google Maps link (many local venues are not on the open map).
   const [linked, setLinked] = usePersistentState<Venue | null>('venueLink', null, isNullableVenue);
   const [link, setLink] = useState('');
   const [linkError, setLinkError] = useState('');
@@ -85,9 +85,8 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
   const [results, setResults] = useState<{ venues: Venue[]; wish: string; area?: string } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
-  // Venues we already know (picked from a search or saved from a link) need no lookup.
-  const known =
-    results?.venues.find((v) => v.name === venueName) ?? (linked?.name === venueName ? linked : undefined);
+  // A venue we already know (chosen from a search or saved from a link) needs no lookup.
+  const known = linked?.name === venueName ? linked : undefined;
   const key = `${venueName}|${city}`;
 
   useEffect(() => {
@@ -127,12 +126,19 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
     const r = await venueFromMapsLink(link.trim());
     const venue = r.venues[0];
     if (!venue) return setLinkError(r.error ?? 'We couldn’t read that link.');
-    setLinked(venue);
+    choose(venue);
     setLink('');
-    onChoose(venue.name);
   };
 
   const exact = results?.venues.some((v) => v.match);
+
+  /** Saves the venue, clears the search and hands it to the plan. */
+  const choose = (venue: Venue) => {
+    setLinked(venue);
+    setResults(null);
+    setSearchError('');
+    onChoose(venue);
+  };
 
   return (
     <section className="card venue-panel" aria-labelledby="venue-heading">
@@ -150,7 +156,8 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
           ) : check.venues.length > 0 ? (
             <>
               <p className="notice success">
-                “{venueName}” {known === linked && linked ? 'is saved from Google Maps.' : 'is on the map.'}
+                “{venueName}” is your venue
+                {known?.kind === 'from Google Maps' ? ' — saved from Google Maps.' : '.'}
               </p>
               <ul className="plain venue-list">
                 <VenueRow venue={check.venues[0]} chosen />
@@ -257,12 +264,7 @@ export function VenuePanel({ city, venueName, venueType, preference, onChoose }:
             </p>
             <ul className="plain venue-list">
               {results.venues.map((v) => (
-                <VenueRow
-                  key={v.osmUrl}
-                  venue={v}
-                  chosen={v.name === venueName}
-                  onChoose={() => onChoose(v.name)}
-                />
+                <VenueRow key={v.osmUrl} venue={v} chosen={v.name === venueName} onChoose={() => choose(v)} />
               ))}
             </ul>
           </>

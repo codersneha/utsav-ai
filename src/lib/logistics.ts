@@ -1,4 +1,4 @@
-import type { EventType, Logistics, ScheduleItem, VendorAdvice } from '../types.js';
+import type { EventType, Logistics, ScheduleItem, VendorAdvice, VenueType } from '../types.js';
 import { cleanList, cleanObjects, toObject } from './aiOutput.js';
 import { fallbackVendorAdvice, vendorGroupsFor } from './checklist.js';
 import { cleanText } from './validation.js';
@@ -102,10 +102,10 @@ const FALLBACK_SCHEDULES: Record<EventType, ScheduleItem[]> = {
 };
 
 /** Curated logistics used when Gemini is unavailable. */
-export function fallbackLogistics(eventType: EventType): Logistics {
+export function fallbackLogistics(eventType: EventType, venueType: VenueType = 'undecided'): Logistics {
   return {
     daySchedule: FALLBACK_SCHEDULES[eventType],
-    vendors: fallbackVendorAdvice(eventType),
+    vendors: fallbackVendorAdvice(eventType, venueType),
     source: 'fallback',
   };
 }

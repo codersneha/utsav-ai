@@ -30,6 +30,7 @@ import {
   type VendorEntry,
   type VendorGroup,
   type VendorStatus,
+  type Venue,
   type VenueType,
 } from '../types';
 
@@ -59,19 +60,21 @@ const ICONS: Record<string, LucideIcon> = {
   branding: Paintbrush,
 };
 
-type Stage = 'not-started' | 'in-progress' | 'shortlisting' | 'quoted' | 'booked';
+type Stage = 'not-started' | 'in-progress' | 'shortlisting' | 'quoted' | 'chosen' | 'booked';
 
 const STAGE_LABELS: Record<Stage, string> = {
   'not-started': 'Not started',
   'in-progress': 'In progress',
   shortlisting: 'Shortlisting',
   quoted: 'Quotes in',
+  chosen: 'Chosen',
   booked: 'Booked',
 };
 
 /** Where a vendor category stands, from the user's own records and ticks. */
 export function vendorStage(entries: VendorEntry[], tasksDone: number): Stage {
   if (entries.some((e) => e.status === 'confirmed')) return 'booked';
+  if (entries.some((e) => e.status === 'pending')) return 'chosen';
   if (entries.some((e) => e.quote > 0)) return 'quoted';
   if (entries.length > 0) return 'shortlisting';
   return tasksDone > 0 ? 'in-progress' : 'not-started';
@@ -83,7 +86,7 @@ interface Props {
   venueName: string;
   venueType: VenueType;
   venuePreference: string;
-  onChooseVenue: (name: string) => void;
+  onChooseVenue: (venue: Venue) => void;
   budget: BudgetPlan;
   done: Record<string, boolean>;
   onToggle: (id: string) => void;
@@ -301,12 +304,23 @@ function ContactCard({ entry, ...props }: Props & { entry: VendorEntry }) {
         <p className="small">
           <MapPin size={13} aria-hidden="true" />{' '}
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(entry.address)}`}
+            href={
+              entry.mapsUrl ??
+              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(entry.address)}`
+            }
             target="_blank"
             rel="noopener noreferrer"
           >
             {entry.address}
             <span className="sr-only"> (map, opens in a new tab)</span>
+          </a>
+        </p>
+      )}
+      {entry.mapsUrl && !entry.address && (
+        <p className="small">
+          <MapPin size={13} aria-hidden="true" />{' '}
+          <a href={entry.mapsUrl} target="_blank" rel="noopener noreferrer">
+            Open in Google Maps<span className="sr-only"> (opens in a new tab)</span>
           </a>
         </p>
       )}

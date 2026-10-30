@@ -1,4 +1,4 @@
-import type { EventType, VendorAdvice, VendorEntry, VendorGroup } from '../types.js';
+import type { EventType, VendorAdvice, VendorEntry, VendorGroup, VenueType } from '../types.js';
 
 interface GroupSpec {
   id: string;
@@ -223,14 +223,20 @@ const CHECKLIST_TEMPLATES: Record<EventType, GroupSpec[]> = {
 };
 
 /** Vendor group ids and names for an event type (used to steer the AI). */
-export function vendorGroupsFor(eventType: EventType): { id: string; vendor: string }[] {
-  return CHECKLIST_TEMPLATES[eventType].map(({ id, vendor }) => ({ id, vendor }));
+export function vendorGroupsFor(
+  eventType: EventType,
+  venueType: VenueType = 'undecided',
+): { id: string; vendor: string }[] {
+  return groupsFor(eventType, venueType).map(({ id, vendor }) => ({ id, vendor }));
 }
 
 /** Curated advice per vendor group, used when Gemini is unavailable. */
-export function fallbackVendorAdvice(eventType: EventType): Record<string, VendorAdvice> {
+export function fallbackVendorAdvice(
+  eventType: EventType,
+  venueType: VenueType = 'undecided',
+): Record<string, VendorAdvice> {
   return Object.fromEntries(
-    CHECKLIST_TEMPLATES[eventType].map((g) => [g.id, { questions: g.questions, tasks: [] }]),
+    groupsFor(eventType, venueType).map((g) => [g.id, { questions: g.questions, tasks: [] }]),
   );
 }
 
@@ -238,11 +244,40 @@ export function fallbackVendorAdvice(eventType: EventType): Record<string, Vendo
  * Builds the vendor checklist with stable ids so progress can be persisted.
  * AI-suggested tasks (if any) are appended and marked so users can tell them apart.
  */
+/** At a restaurant or café the venue serves the food, so there is no separate caterer. */
+const RESTAURANT_VENUE: GroupSpec = {
+  id: 'venue',
+  vendor: 'Restaurant / café (venue & food)',
+  searchTerm: 'restaurants for private parties',
+  budgetId: 'catering',
+  tasks: [
+    'Book a private area or the whole place for your time slot',
+    'Fix the party menu and the per-head price (add the menu photo in Ideas)',
+    'Ask about cake, decoration and music rules, and any corkage charge',
+    'Confirm taxes, service charge and the minimum order',
+  ],
+  questions: [
+    'Is there a minimum spend or minimum number of guests?',
+    'Are taxes and the service charge included in the per-head price?',
+    'Can we bring our own cake and decorations?',
+  ],
+};
+
+export const isRestaurantVenue = (venueType: VenueType) => venueType === 'restaurant' || venueType === 'cafe';
+
+/** The vendor groups for this event — a restaurant or café venue replaces the caterer. */
+function groupsFor(eventType: EventType, venueType: VenueType): GroupSpec[] {
+  const groups = CHECKLIST_TEMPLATES[eventType];
+  if (!isRestaurantVenue(venueType)) return groups;
+  return groups.filter((g) => g.id !== 'caterer').map((g) => (g.id === 'venue' ? RESTAURANT_VENUE : g));
+}
+
 export function buildChecklist(
   eventType: EventType,
   advice: Record<string, VendorAdvice> = {},
+  venueType: VenueType = 'undecided',
 ): VendorGroup[] {
-  return CHECKLIST_TEMPLATES[eventType].map(({ tasks, questions: _questions, ...group }) => ({
+  return groupsFor(eventType, venueType).map(({ tasks, questions: _questions, ...group }) => ({
     ...group,
     items: [
       ...tasks.map((task, i) => ({ id: `${group.id}-${i}`, task })),
@@ -279,4 +314,17 @@ export function summariseQuotes(entries: VendorEntry[], groupId: string): QuoteS
     lowest: quotes.length > 0 ? Math.min(...quotes) : 0,
     confirmed: mine.find((e) => e.status === 'confirmed'),
   };
+}
+
+/** Guesses the kind of venue from a map listing, so a restaurant or café needs no separate caterer. */
+export function venueTypeOf(kind: string, name: string): VenueType | null {
+  const text = `${kind} ${name}`.toLowerCase();
+  if (/caf[eé]|coffee|bakery|patisserie/.test(text)) return 'cafe';
+  if (/restaurant|dhaba|bistro|kitchen|grill|diner|\bbar\b|pub|lounge|brewery|eatery/.test(text))
+    return 'restaurant';
+  if (/hotel|resort/.test(text)) return 'hotel';
+  if (/banquet|marriage|events venue|wedding/.test(text)) return 'banquet';
+  if (/lawn|garden/.test(text)) return 'outdoor';
+  if (/community/.test(text)) return 'community-hall';
+  return null;
 }

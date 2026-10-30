@@ -149,6 +149,8 @@ export interface VendorEntry {
   address?: string;
   /** The user's own notes, e.g. what the quote includes. */
   notes?: string;
+  /** Google Maps link for a venue chosen from the map. */
+  mapsUrl?: string;
   /** Quoted price in INR, 0 if not yet quoted. */
   quote: number;
   status: VendorStatus;
@@ -278,4 +280,37 @@ export interface GuestEntry {
   /** The invitation has been sent. */
   invited: boolean;
   rsvp: RsvpStatus;
+}
+
+export const MENU_CATEGORIES = ['starter', 'main', 'bread', 'rice', 'dessert', 'drink', 'other'] as const;
+export type MenuCategory = (typeof MENU_CATEGORIES)[number];
+
+/** One line of a party order planned from a restaurant's own menu. */
+export interface PartyOrderLine {
+  name: string;
+  category: MenuCategory;
+  veg: boolean;
+  /** Price of one order, as printed on the menu (INR). */
+  price: number;
+  /** How many people one order typically feeds. */
+  serves: number;
+  quantity: number;
+  /** quantity × price, computed in code. */
+  cost: number;
+}
+
+/** A party order built from a photo of a restaurant or café menu. */
+export interface PartyOrder {
+  /** How many dishes were read from the menu. */
+  itemsRead: number;
+  lines: PartyOrderLine[];
+  /** Sum of the lines (before taxes and service charge). */
+  total: number;
+  perHead: number;
+  guests: number;
+  /** The food budget the order was fitted to. */
+  budget: number;
+  /** True when quantities were reduced to fit the budget. */
+  trimmed: boolean;
+  note: string;
 }
