@@ -2091,7 +2091,11 @@ ul.plain {
 
 .lookup-miss {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
 }
 
 .lookup-miss p {

@@ -287,11 +287,15 @@ export function VenuePanel({
               </ul>
             </>
           ) : (
-            <div className="notice lookup-miss">
-              <p>
-                {lookup.error ??
-                  `We couldn’t find “${lookup.query}” on the open map — many local places aren’t listed there yet.`}
-              </p>
+            <div className={`lookup-miss${lookup.error ? ' notice warning' : ''}`}>
+              {lookup.error ? (
+                <p>{lookup.error}</p>
+              ) : (
+                <p>
+                  <strong>Pick “{lookup.query}” on Google Maps</strong> — it finds places from loose names and
+                  shows photos and reviews.
+                </p>
+              )}
               {!isLink(lookup.query) && (
                 <ol className="lookup-steps">
                   <li>
@@ -301,16 +305,16 @@ export function VenuePanel({
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <ExternalLink size={14} aria-hidden="true" /> Search Google Maps for “{lookup.query}”
+                      <ExternalLink size={14} aria-hidden="true" /> Open “{lookup.query}” in Google Maps
                       <span className="sr-only"> (opens in a new tab)</span>
-                    </a>{' '}
-                    — it understands loose names.
+                    </a>
                   </li>
-                  <li>Open the right place, then Share → Copy link.</li>
+                  <li>Open the right place, then tap Share → Copy link.</li>
                   <li>
                     <button type="button" className="btn small primary" onClick={() => void pasteLink()}>
                       <ClipboardPaste size={14} aria-hidden="true" /> Use the copied link
-                    </button>
+                    </button>{' '}
+                    <span className="hint">or paste it in the box above.</span>
                   </li>
                 </ol>
               )}
@@ -404,6 +408,10 @@ export function VenuePanel({
         Venue data ©{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
           OpenStreetMap contributors<span className="sr-only"> (opens in a new tab)</span>
+        </a>{' '}
+        and{' '}
+        <a href="https://overturemaps.org" target="_blank" rel="noopener noreferrer">
+          Overture Maps Foundation<span className="sr-only"> (opens in a new tab)</span>
         </a>
         . Prices and availability are never assumed — confirm with the venue.
       </p>

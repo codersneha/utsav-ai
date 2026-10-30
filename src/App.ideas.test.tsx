@@ -335,7 +335,7 @@ describe('a venue the open map does not list', () => {
     await user.type(screen.getByLabelText('Find a specific venue'), 'bubble and tea kolkata');
     await user.click(screen.getByRole('button', { name: /^Find$/ }));
     const search = await screen.findByRole('link', {
-      name: /Search Google Maps for “bubble and tea kolkata”/,
+      name: /Open “bubble and tea kolkata” in Google Maps/,
     });
     // The city is not repeated when it was already typed.
     expect(search).toHaveAttribute('href', expect.stringMatching(/query=bubble%20and%20tea%20kolkata$/));
