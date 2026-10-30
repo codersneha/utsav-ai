@@ -174,6 +174,52 @@ const CHECKLIST_TEMPLATES: Record<EventType, GroupSpec[]> = {
       questions: ['Who handles waste segregation and pickup?', 'Is a trained first-aider on site?'],
     },
   ],
+  corporate: [
+    {
+      id: 'venue',
+      vendor: 'Venue',
+      searchTerm: 'conference and event venues',
+      budgetId: 'venue',
+      tasks: [
+        'Shortlist venues with the right room layout (theatre, cluster or banquet)',
+        'Check Wi-Fi, power backup, parking and accessibility',
+        'Sign the agreement with the GST invoice details',
+      ],
+      questions: [
+        'Is the AV and in-house tech support included?',
+        'What are the overtime and cancellation charges?',
+      ],
+    },
+    {
+      id: 'av',
+      vendor: 'AV & production',
+      searchTerm: 'event AV and stage production',
+      budgetId: 'stage',
+      tasks: [
+        'Book screens, sound, mics and a stage manager',
+        'Plan a full tech rehearsal',
+        'Arrange livestream or recording if needed',
+      ],
+      questions: ['Is there a backup laptop and clicker?', 'How many wireless mics are included?'],
+    },
+    { ...COMMON_CATERER, vendor: 'Caterer', searchTerm: 'corporate caterers' },
+    {
+      id: 'branding',
+      vendor: 'Branding & decor',
+      searchTerm: 'event branding and printing',
+      budgetId: 'decor',
+      tasks: ['Approve the backdrop, standees and signage', 'Print name badges and table cards'],
+      questions: ['What is the print turnaround time?', 'Do you install and remove the branding?'],
+    },
+    {
+      id: 'gifts',
+      vendor: 'Kits & awards',
+      searchTerm: 'corporate gifting',
+      budgetId: 'gifts',
+      tasks: ['Finalise welcome kits or swag', 'Order trophies and certificates'],
+      questions: ['What is the minimum order and delivery date?', 'Can items be personalised?'],
+    },
+  ],
 };
 
 /** Vendor group ids and names for an event type (used to steer the AI). */

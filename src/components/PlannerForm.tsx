@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowRight, Cake, Heart, PartyPopper, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Briefcase, Cake, Heart, PartyPopper, Sparkles } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { daysBetween, formatDate, todayIso } from '../lib/dates';
 import { TRADITIONS, TRADITION_DATA, type TraditionId } from '../lib/culture';
 import { formatInr } from '../lib/plan';
+import { parseInr } from '../lib/money';
 import { LIMITS, validateEventDetails, type FieldErrors } from '../lib/validation';
 import {
   AGE_GROUPS,
@@ -29,6 +30,12 @@ const EVENT_LABELS: Record<EventType, { label: string; hint: string; icon: typeo
     icon: PartyPopper,
     tone: 'gold',
   },
+  corporate: {
+    label: 'Corporate event',
+    hint: 'Offsites, annual days, launches, team dinners',
+    icon: Briefcase,
+    tone: 'teal',
+  },
 };
 
 const PRIORITY_LABELS: Record<Priority, string> = {
@@ -46,6 +53,10 @@ const VENUE_LABELS: Record<VenueType, string> = {
   home: 'At home',
   'community-hall': 'Community hall / society',
   temple: 'Temple / religious venue',
+  restaurant: 'Restaurant',
+  cafe: 'Café',
+  hotel: 'Hotel / resort',
+  office: 'Office / conference room',
 };
 
 const AGE_LABELS: Record<AgeGroup, string> = {
@@ -114,17 +125,19 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
       : TRADITION_DATA[initial?.tradition ?? 'modern'].defaultCeremonies,
   );
   const [venueName, setVenueName] = useState(initial?.venueName ?? '');
+  const [venuePreference, setVenuePreference] = useState(initial?.venuePreference ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
   const summaryRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
+  const budgetValue = parseInr(budget);
   const values = {
     eventType,
     title,
     date,
     city,
     guests,
-    budget,
+    budget: budgetValue ?? budget,
     preferences,
     priorities,
     venueType,
@@ -135,6 +148,7 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
     tradition,
     ceremonies,
     venueName,
+    venuePreference,
   };
 
   const chooseTradition = (t: TraditionId) => {
@@ -379,10 +393,8 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                 <label htmlFor="budget">Total budget (₹) *</label>
                 <input
                   id="budget"
-                  type="number"
-                  inputMode="numeric"
-                  min={LIMITS.budgetMin}
-                  step={1000}
+                  type="text"
+                  autoComplete="off"
                   value={budget}
                   required
                   aria-invalid={Boolean(errors.budget)}
@@ -390,7 +402,11 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                   onChange={(e) => setBudget(e.target.value)}
                 />
                 <p id="budget-hint" className="hint">
-                  Include everything — venue, food, decor and contingency.
+                  Type it your way — 20 lakh, 20L, 1.5 crore or 20,00,000. Include everything: venue, food,
+                  décor and contingency.
+                  {budgetValue !== null && /[^\d]/.test(budget.trim()) && (
+                    <strong className="parsed-amount"> = {formatInr(budgetValue)}</strong>
+                  )}
                 </p>
                 <div className="chips quick-amounts" role="group" aria-label="Quick budget amounts">
                   {QUICK_BUDGETS.map((amount) => (
@@ -469,6 +485,20 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="field">
+                <label htmlFor="venuePreference">What kind of venue would you like?</label>
+                <input
+                  id="venuePreference"
+                  value={venuePreference}
+                  maxLength={LIMITS.venueMax}
+                  placeholder="e.g. rooftop with dine-in, garden with a banquet hall"
+                  aria-describedby="venuePreference-hint"
+                  onChange={(e) => setVenuePreference(e.target.value)}
+                />
+                <p id="venuePreference-hint" className="hint">
+                  We use this to find the closest matches near you.
+                </p>
               </div>
               <div className="field">
                 <label htmlFor="venueName">Venue name, if booked</label>
@@ -565,13 +595,11 @@ export function PlannerForm({ initial, isEdit = false, intro, onSubmit, onCancel
           </div>
           <div>
             <dt>Budget</dt>
-            <dd>{Number(budget) > 0 ? formatInr(Number(budget)) : '—'}</dd>
+            <dd>{budgetValue ? formatInr(budgetValue) : '—'}</dd>
           </div>
           <div>
             <dt>Per guest</dt>
-            <dd>
-              {Number(guests) > 0 && Number(budget) > 0 ? formatInr(Number(budget) / Number(guests)) : '—'}
-            </dd>
+            <dd>{Number(guests) > 0 && budgetValue ? formatInr(budgetValue / Number(guests)) : '—'}</dd>
           </div>
           <div>
             <dt>Tradition</dt>

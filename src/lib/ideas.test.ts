@@ -9,8 +9,8 @@ describe('parseIdeas', () => {
     expect(ideas?.ceremonies?.map((c) => c.ceremonyId)).toEqual(['mehendi', 'wedding']);
     expect(ideas?.ceremonies?.[0].theme).toBe('Marigold');
     expect(ideas?.menu?.find((m) => m.courseId === 'starters')?.dishes).toEqual([
-      'Moong dal kachori',
       'Kanji vada',
+      'Moong dal kachori',
     ]);
   });
 
@@ -20,18 +20,22 @@ describe('parseIdeas', () => {
         ...geminiIdeas,
         ceremonies: [
           { id: 'mahira', theme: 'Not chosen', palette: [], decor: ['x'] },
-          { id: 'haldi', theme: 'Sunshine', palette: ['Yellow'], decor: ['Marigold strings'] },
+          { id: 'pithi', theme: 'Sunshine', palette: ['Yellow'], decor: ['Marigold strings'] },
         ],
         menu: [{ course: 'starters', dishes: ['Sushi platter', 'Kanji vada'] }],
       },
       weddingDetails,
     );
-    expect(ideas?.ceremonies?.map((c) => c.ceremonyId)).toEqual(['haldi']);
+    expect(ideas?.ceremonies?.map((c) => c.ceremonyId)).toEqual(['pithi']);
     const starters = ideas?.menu?.find((m) => m.courseId === 'starters')?.dishes ?? [];
     expect(starters).not.toContain('Sushi platter');
     expect(starters).toContain('Kanji vada');
     // Courses the model skipped are still filled from the knowledge base.
-    expect(ideas?.menu?.map((m) => m.courseId)).toEqual(menuFor(weddingDetails).courses.map((c) => c.id));
+    expect(ideas?.menu?.map((m) => m.courseId)).toEqual(
+      menuFor(weddingDetails)
+        .courses.filter((c) => c.pick[0] > 0)
+        .map((c) => c.id),
+    );
   });
 
   it('sanitises and caps untrusted model output', () => {
@@ -107,8 +111,8 @@ describe('fallbackIdeas', () => {
 
   it('plans one décor per wedding function and none for a party', () => {
     expect(fallbackIdeas(weddingDetails).ceremonies.map((c) => c.ceremonyId)).toEqual([
+      'pithi',
       'mehendi',
-      'haldi',
       'wedding',
       'reception',
     ]);

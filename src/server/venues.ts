@@ -1,4 +1,4 @@
-import type { Venue } from '../types.js';
+import type { Venue, VenueType } from '../types.js';
 import { cleanText } from '../lib/validation.js';
 
 /**
@@ -110,61 +110,144 @@ export async function geocodeCity(
 
 const EVENT_NAME = /banquet|marriage|wedding|lawn|bhawan|bhavan|kalyan|mandap|vivah|utsav|hall/i;
 
+const KINDS: Record<string, string> = {
+  events_venue: 'events venue',
+  community_centre: 'community hall',
+  conference_centre: 'conference centre',
+  resort: 'resort',
+  hotel: 'hotel',
+  restaurant: 'restaurant',
+  cafe: 'café',
+  bar: 'bar',
+  pub: 'pub',
+};
+
 function kindOf(type: string, name: string): string {
-  if (type === 'events_venue') return 'events venue';
-  if (type === 'community_centre') return 'community hall';
-  if (type === 'resort') return 'resort';
-  if (type === 'hotel') return 'hotel';
-  if (/lawn/i.test(name)) return 'lawn';
+  if (KINDS[type]) return KINDS[type];
+  if (/roof ?top|terrace/i.test(name)) return 'rooftop';
+  if (/lawn|garden/i.test(name)) return 'lawn / garden';
   if (/banquet|marriage|wedding|kalyan|vivah/i.test(name)) return 'banquet / marriage hall';
   return 'hall';
 }
 
 /**
- * Searches, most event-specific first. Bracketed queries are Nominatim special
- * phrases (OSM tags); the others match venue names.
+ * Searches for each kind of place. Bracketed queries are Nominatim special
+ * phrases (OSM tags); the others match words in venue names.
  */
-const SEARCHES = [
-  '[amenity=events_venue]',
-  'banquet',
-  'marriage hall',
-  '[amenity=community_centre]',
-  '[tourism=resort]',
-  '[tourism=hotel]',
+const EVENT_SEARCHES = ['[amenity=events_venue]', 'banquet', 'marriage hall', '[amenity=community_centre]'];
+
+export const TYPE_SEARCHES: Record<VenueType, string[]> = {
+  undecided: [...EVENT_SEARCHES, '[tourism=resort]', '[tourism=hotel]'],
+  banquet: ['[amenity=events_venue]', 'banquet', 'marriage hall', '[tourism=hotel]'],
+  outdoor: ['lawn', 'garden', '[tourism=resort]', '[amenity=events_venue]'],
+  home: [...EVENT_SEARCHES],
+  'community-hall': ['[amenity=community_centre]', '[amenity=events_venue]', 'marriage hall'],
+  temple: ['kalyana mandapam', 'marriage hall', '[amenity=community_centre]'],
+  restaurant: ['[amenity=restaurant]', 'banquet'],
+  cafe: ['[amenity=cafe]'],
+  hotel: ['[tourism=hotel]', '[tourism=resort]'],
+  office: ['[amenity=conference_centre]', 'auditorium', '[tourism=hotel]'],
+};
+
+/** Words people use for a kind of place, and how to search for it. */
+const PREFERENCE_SEARCHES: [RegExp, string[]][] = [
+  [/roof ?top|terrace/i, ['rooftop', 'terrace']],
+  [/\bbars?\b|pub|lounge|brewery/i, ['[amenity=bar]', '[amenity=pub]']],
+  [/restaurant|dine|dining|dinner|lunch/i, ['[amenity=restaurant]']],
+  [/caf[eé]|coffee/i, ['[amenity=cafe]']],
+  [/garden|lawn|outdoor|open[- ]air/i, ['lawn', 'garden']],
+  [/banquet|marriage|wedding hall/i, ['[amenity=events_venue]', 'banquet', 'marriage hall']],
+  [/resort|farm ?house|villa/i, ['[tourism=resort]', 'farmhouse']],
+  [/hotel|five[- ]star|5[- ]star|luxury/i, ['[tourism=hotel]']],
+  [/club|gymkhana/i, ['club']],
+  [/conference|auditorium|convention|corporate/i, ['[amenity=conference_centre]', 'auditorium']],
+  [/community|society/i, ['[amenity=community_centre]']],
 ];
+
+const STOP_WORDS = new Set([
+  'and',
+  'with',
+  'for',
+  'the',
+  'a',
+  'an',
+  'or',
+  'of',
+  'in',
+  'near',
+  'big',
+  'small',
+]);
+
+/** Turns the user's words and venue type into a short list of searches, their own words first. */
+export function searchesFor(venueType: VenueType, preference: string, max = 6): string[] {
+  const fromWords = PREFERENCE_SEARCHES.filter(([re]) => re.test(preference)).flatMap(([, q]) => q);
+  return [...new Set([...fromWords, ...TYPE_SEARCHES[venueType], ...EVENT_SEARCHES])].slice(0, max);
+}
+
+/** Words from the preference that a venue's name or kind can match. */
+function preferenceWords(preference: string): string[] {
+  return preference
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w))
+    .map((w) => (w === 'rooftop' || w === 'roof' ? 'roof' : w.replace(/s$/, '')));
+}
+
 const ENOUGH = 15;
 const BOX_DEGREES = 0.12; // ~13 km either side of the centre
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export interface VenueSearch {
+  venueType?: VenueType;
+  /** The user's own words, e.g. "rooftop with dine-in". */
+  preference?: string;
+  limit?: number;
+  pause?: (ms: number) => Promise<unknown>;
+}
+
 /**
- * Event venues around a city or town: banquet and marriage halls, community
- * halls, resorts and hotels — event venues first, then nearest first.
+ * Venues around a city, town or district that best match the kind of place
+ * the user wants: places matching their words first, then the right kind of
+ * venue, then nearest first. Matches are close, not exact — "rooftop bar"
+ * also finds rooftop restaurants.
  */
 export async function findVenues(
   city: string,
   fetchImpl: typeof fetch = fetch,
-  { limit = 20, pause = wait }: { limit?: number; pause?: (ms: number) => Promise<unknown> } = {},
+  { venueType = 'undecided', preference = '', limit = 20, pause = wait }: VenueSearch = {},
 ): Promise<Venue[]> {
   const centre = await geocodeCity(city, fetchImpl);
   const { lat, lon } = centre;
   const viewbox = [lon - BOX_DEGREES, lat + BOX_DEGREES, lon + BOX_DEGREES, lat - BOX_DEGREES].join(',');
-  const found = new Map<string, Venue & { rank: number }>();
-  for (const [rank, query] of SEARCHES.entries()) {
+  const searches = searchesFor(venueType, preference);
+  const words = preferenceWords(preference);
+  const found = new Map<string, Venue & { score: number }>();
+  for (const [rank, query] of searches.entries()) {
     if (found.size >= ENOUGH) break;
     await pause(SPACING_MS);
     const url = `${NOMINATIM}?format=jsonv2&limit=20&bounded=1&viewbox=${viewbox}&q=${encodeURIComponent(query)}`;
     for (const venue of toVenues(await getJson(url, fetchImpl), city)) {
-      // Name searches can match shops or flats; keep only places named like a venue.
-      if (!query.startsWith('[') && !EVENT_NAME.test(venue.name)) continue;
+      // Name searches can match shops or flats; keep places whose name carries the word or sounds like a venue.
+      const byName = !query.startsWith('[');
+      if (byName && !venue.name.toLowerCase().includes(query.split(' ')[0]) && !EVENT_NAME.test(venue.name))
+        continue;
       const key = venue.name.toLowerCase();
       if (found.has(key)) continue;
-      found.set(key, { ...venue, distanceKm: distanceKm(lat, lon, venue.lat, venue.lon), rank });
+      const text = `${venue.name} ${venue.kind}`.toLowerCase();
+      const matched = words.filter((w) => text.includes(w));
+      const score = matched.length * 3 + Math.max(0, searches.length - rank);
+      found.set(key, {
+        ...venue,
+        distanceKm: distanceKm(lat, lon, venue.lat, venue.lon),
+        ...(matched.length > 0 ? { match: `Matches “${matched.join(', ')}”` } : {}),
+        score,
+      });
     }
   }
-  const eventy = (v: { rank: number; kind: string }) => v.rank < 3 || v.kind === 'banquet / marriage hall';
   return [...found.values()]
-    .sort((a, b) => Number(eventy(b)) - Number(eventy(a)) || (a.distanceKm ?? 0) - (b.distanceKm ?? 0))
+    .sort((a, b) => b.score - a.score || (a.distanceKm ?? 0) - (b.distanceKm ?? 0))
     .slice(0, limit)
-    .map(({ rank: _rank, ...v }) => v);
+    .map(({ score: _score, ...v }) => v);
 }

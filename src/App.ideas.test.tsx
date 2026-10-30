@@ -36,12 +36,8 @@ describe('culture-grounded ideas', () => {
     expect(menu).toHaveTextContent(/Never a buffet/);
     expect(menu).toHaveTextContent('Phuchka');
     expect(menu).toHaveTextContent('Mishti paan');
-    expect(container.querySelectorAll('.dish img').length).toBeGreaterThan(0);
-    expect(within(menu).getByText(/Dish photo credits/)).toBeInTheDocument();
-    expect(within(menu).getAllByRole('link', { name: /photo source/ })[0]).toHaveAttribute(
-      'href',
-      expect.stringMatching(/^https:\/\/commons\.wikimedia\.org\//),
-    );
+    expect(container.querySelectorAll('.dish img')).toHaveLength(0);
+    expect(within(menu).getByRole('group', { name: 'Menu cost' })).toHaveTextContent(/per plate/);
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -64,7 +60,8 @@ describe('venues', () => {
   it('finds venues near the city and lets the user choose one', async () => {
     const { user, container } = await openBengaliSample();
     await user.click(screen.getByRole('tab', { name: 'Vendors' }));
-    await user.click(screen.getByRole('button', { name: 'Find venues near Kolkata' }));
+    await user.type(screen.getByLabelText('What kind of place would you like?'), 'garden with banquet hall');
+    await user.click(screen.getByRole('button', { name: 'Find places' }));
     const choose = await screen.findByRole('button', { name: 'Choose Rajbari Banquet as the venue' });
     expect(screen.getByRole('link', { name: /Photos & reviews on Google Maps/ })).toHaveAttribute(
       'href',
@@ -104,5 +101,59 @@ describe('photo inspiration', () => {
       target: { files: [new File(['hello'], 'notes.txt', { type: 'text/plain' })] },
     });
     expect(await screen.findByText(/JPG, PNG or WebP/)).toBeInTheDocument();
+  });
+});
+
+describe('guest ledger', () => {
+  it('adds families, counts them and marks important guests', async () => {
+    const { user, container } = await openBengaliSample();
+    await user.click(screen.getByRole('tab', { name: 'Guests' }));
+    await user.type(screen.getByLabelText('Family or guest name'), 'Sharma family');
+    await user.type(screen.getByLabelText('Relation'), 'Mama’s family');
+    await user.clear(screen.getByLabelText('Adults'));
+    await user.type(screen.getByLabelText('Adults'), '4');
+    await user.clear(screen.getByLabelText('Children'));
+    await user.type(screen.getByLabelText('Children'), '2');
+    await user.click(screen.getByLabelText('Important guest'));
+    await user.click(screen.getByRole('button', { name: /Add to list/ }));
+
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Sharma family')).toBeInTheDocument();
+    expect(within(table).getByText('6 people')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark Sharma family as important' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await user.click(screen.getByLabelText('Invitation sent to Sharma family'));
+    await user.selectOptions(screen.getByLabelText('Reply from Sharma family'), 'confirmed');
+    expect(screen.getByText('Confirmed', { selector: 'dt' }).nextSibling).toHaveTextContent('6');
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Remove Sharma family' }));
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+});
+
+describe('what if', () => {
+  it('prices extra guests and can re-plan for them with undo', async () => {
+    const { user, container } = await openBengaliSample();
+    await user.click(screen.getByRole('tab', { name: 'What if' }));
+    const extra = screen.getByLabelText('Extra guests');
+    await user.clear(extra);
+    await user.type(extra, '50');
+    expect(screen.getByRole('region', { name: 'More guests turn up' })).toHaveTextContent(/₹[\d,]+ more/);
+    expect(await axeViolations(container)).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Plan for 350 guests' }));
+    const change = await screen.findByRole('region', { name: /Plan updated/ });
+    expect(change).toHaveTextContent('Guests: 300 → 350');
+    await user.click(within(change).getByRole('button', { name: /Undo/ }));
+    expect(screen.getByRole('list', { name: 'Event details' })).toHaveTextContent('300 guests');
+  });
+
+  it('shows next steps on the overview that open the right tab', async () => {
+    const { user } = await openBengaliSample();
+    const steps = screen.getByRole('article', { name: 'Your next steps' });
+    await user.click(within(steps).getByRole('button', { name: /Open guests/ }));
+    expect(screen.getByRole('tab', { name: 'Guests' })).toHaveAttribute('aria-selected', 'true');
   });
 });

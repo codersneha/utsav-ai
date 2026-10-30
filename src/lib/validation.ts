@@ -133,6 +133,7 @@ export function validateEventDetails(input: unknown, today: string): ValidationR
       tradition: isTradition(raw.tradition) ? raw.tradition : 'modern',
       ceremonies: validCeremonies(raw, eventType as EventType),
       venueName: cleanText(raw.venueName, LIMITS.venueMax),
+      venuePreference: cleanText(raw.venuePreference, LIMITS.venueMax),
     },
   };
 }

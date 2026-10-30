@@ -30,6 +30,7 @@ export function sampleEvents(today: string): Sample[] {
         tradition: 'bengali',
         ceremonies: ['aiburobhat', 'gaye-holud', 'biye', 'bou-bhaat'],
         venueName: '',
+        venuePreference: '',
       },
     },
     {
@@ -52,6 +53,7 @@ export function sampleEvents(today: string): Sample[] {
         tradition: 'marathi',
         ceremonies: [],
         venueName: '',
+        venuePreference: '',
       },
     },
     {
@@ -74,6 +76,7 @@ export function sampleEvents(today: string): Sample[] {
         tradition: 'modern',
         ceremonies: [],
         venueName: '',
+        venuePreference: '',
       },
     },
   ];

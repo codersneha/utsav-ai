@@ -105,7 +105,8 @@ async function attemptGenerate(
     ],
     generationConfig: {
       temperature: req.temperature ?? 0.8,
-      maxOutputTokens: req.maxOutputTokens ?? 2048,
+      // The limit includes thinking tokens, so leave room for the full JSON answer.
+      maxOutputTokens: req.maxOutputTokens ?? 4096,
       // Planning ideas need little reasoning; low thinking keeps latency down.
       thinkingConfig: { thinkingLevel: 'low' },
       ...(req.responseSchema

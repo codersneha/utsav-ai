@@ -48,7 +48,7 @@ describe('PlannerForm wizard', () => {
 
     await user.type(screen.getByLabelText(/Number of guests/), '40');
     await user.click(screen.getByRole('button', { name: '₹50k' }));
-    expect(screen.getByLabelText(/Total budget/)).toHaveValue(50000);
+    expect(screen.getByLabelText(/Total budget/)).toHaveValue('50000');
     await user.click(screen.getByLabelText('Food'));
     await user.click(screen.getByLabelText('Decor'));
     await user.click(screen.getByLabelText('Venue'));

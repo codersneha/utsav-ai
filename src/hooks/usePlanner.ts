@@ -3,7 +3,15 @@ import { askPlanner, fetchIdeas, fetchLogistics, type RefineOptions } from '../l
 import type { TradeOffAction } from '../lib/budget';
 import { describeChanges, type PlanChange } from '../lib/changes';
 import { todayIso } from '../lib/dates';
-import { isArrayOf, isChatTurn, isCustomTask, isIdeas, isLogistics, isVendorEntry } from '../lib/guards';
+import {
+  isArrayOf,
+  isChatTurn,
+  isCustomTask,
+  isGuestEntry,
+  isIdeas,
+  isLogistics,
+  isVendorEntry,
+} from '../lib/guards';
 import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
 import { buildPlan } from '../lib/plan';
 import { readSharedPlan } from '../lib/share';
@@ -13,6 +21,7 @@ import type {
   ChatTurn,
   CustomTask,
   EventDetails,
+  GuestEntry,
   Ideas,
   IdeasSection,
   Logistics,
@@ -123,6 +132,7 @@ export function usePlanner() {
     isArrayOf(isCustomTask),
   );
   const [vendors, setVendors] = usePersistentState<VendorEntry[]>('vendors', [], isArrayOf(isVendorEntry));
+  const [guests, setGuests] = usePersistentState<GuestEntry[]>('guests', [], isArrayOf(isGuestEntry));
   const [chat, setChat] = usePersistentState<ChatTurn[]>('chat', [], isArrayOf(isChatTurn));
   const [asking, setAsking] = useState(false);
   const [busySection, setBusySection] = useState<IdeasSection | null>(null);
@@ -323,6 +333,7 @@ export function usePlanner() {
     setOverrides({});
     setCustomTasks([]);
     setVendors([]);
+    setGuests([]);
     setChat([]);
     setChange(null);
     setHistory([]);
@@ -373,6 +384,15 @@ export function usePlanner() {
         setVendors((v) => v.map((e) => (e.id === id ? { ...e, ...patch } : e))),
       remove: (id: string) => setVendors((v) => v.filter((e) => e.id !== id)),
     },
+    guests: {
+      entries: guests,
+      add: (entry: Omit<GuestEntry, 'id'>) => setGuests((g) => [...g, { ...entry, id: newId('guest') }]),
+      update: (id: string, patch: Partial<Omit<GuestEntry, 'id'>>) =>
+        setGuests((g) => g.map((e) => (e.id === id ? { ...e, ...patch } : e))),
+      remove: (id: string) => setGuests((g) => g.filter((e) => e.id !== id)),
+    },
+    /** Re-plans for a new guest count (with the change report and undo). */
+    setGuestCount: (count: number) => details && submit({ ...details, guests: count }),
     chat: { turns: chat, asking, ask, clear: () => setChat([]), applyProposal, dismissProposal },
   };
 }

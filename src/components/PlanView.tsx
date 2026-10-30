@@ -11,7 +11,9 @@ import {
   Printer,
   RotateCcw,
   Store,
+  Shuffle,
   Users,
+  UsersRound,
   Wallet,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -24,12 +26,20 @@ import type { ChangeProposal, EventPlan } from '../types';
 import { AskPanel } from './AskPanel';
 import { BudgetPanel } from './BudgetPanel';
 import { ChecklistPanel } from './ChecklistPanel';
+import { GuestsPanel } from './GuestsPanel';
 import { IdeasPanel } from './IdeasPanel';
 import { Overview } from './Overview';
 import { Tabs } from './Tabs';
 import { TimelinePanel } from './TimelinePanel';
+import { WhatIfPanel } from './WhatIfPanel';
+import { menuFor } from '../lib/culture';
 
-const TYPE_LABEL = { wedding: 'Wedding', birthday: 'Birthday', community: 'Community event' } as const;
+const TYPE_LABEL = {
+  wedding: 'Wedding',
+  birthday: 'Birthday',
+  community: 'Community event',
+  corporate: 'Corporate event',
+} as const;
 
 export interface PlanViewProps {
   planner: Planner;
@@ -88,6 +98,7 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           timelineDone={planner.timeline.done}
           checklistDone={planner.checklist.done}
           vendors={planner.vendors.entries}
+          guests={planner.guests.entries}
           onNavigate={setTab}
         />
       ),
@@ -107,6 +118,8 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           onRefine={planner.ideas.refine}
           onRefreshSection={planner.ideas.refreshSection}
           onUseInspiration={planner.applyLook}
+          catering={plan.budget.lines.find((l) => l.id === 'catering')?.amount}
+          decor={plan.budget.lines.find((l) => l.id === 'decor')?.amount}
         />
       ),
     },
@@ -155,6 +168,8 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           groups={plan.checklist}
           city={details.city}
           venueName={details.venueName}
+          venueType={details.venueType}
+          venuePreference={details.venuePreference}
           onChooseVenue={(name) => void planner.chooseVenue(name)}
           budget={plan.budget}
           done={planner.checklist.done}
@@ -165,6 +180,38 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
           onAddVendor={planner.vendors.add}
           onUpdateVendor={planner.vendors.update}
           onRemoveVendor={planner.vendors.remove}
+        />
+      ),
+    },
+    {
+      id: 'guests',
+      label: 'Guests',
+      icon: icon(UsersRound),
+      content: (
+        <GuestsPanel
+          eventType={details.eventType}
+          plannedGuests={details.guests}
+          entries={planner.guests.entries}
+          onAdd={planner.guests.add}
+          onUpdate={planner.guests.update}
+          onRemove={planner.guests.remove}
+          onPlanFor={(n) => void planner.setGuestCount(n)}
+        />
+      ),
+    },
+    {
+      id: 'whatif',
+      label: 'What if',
+      icon: icon(Shuffle),
+      content: (
+        <WhatIfPanel
+          plan={plan}
+          served={/seated/i.test(menuFor(details).service)}
+          onPlanFor={(n) => void planner.setGuestCount(n)}
+          onAsk={(q) => {
+            setTab('ask');
+            void planner.chat.ask(q);
+          }}
         />
       ),
     },

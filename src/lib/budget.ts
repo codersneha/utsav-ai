@@ -47,6 +47,16 @@ export const BUDGET_TEMPLATES: Record<EventType, CategorySpec[]> = {
     { id: 'safety', label: 'Safety, first aid & cleanup', weight: 7 },
     { id: 'contingency', label: 'Contingency', weight: 5, fixed: true },
   ],
+  corporate: [
+    { id: 'venue', label: 'Venue & stay', weight: 25, boostedBy: 'venue' },
+    { id: 'catering', label: 'Food & beverages', weight: 28, boostedBy: 'food', perGuest: true },
+    { id: 'stage', label: 'AV, stage & production', weight: 14, boostedBy: 'entertainment' },
+    { id: 'decor', label: 'Branding & decor', weight: 8, boostedBy: 'decor' },
+    { id: 'gifts', label: 'Kits, swag & awards', weight: 8, perGuest: true },
+    { id: 'transport', label: 'Travel & logistics', weight: 7, perGuest: true },
+    { id: 'photo', label: 'Photo & video', weight: 5, boostedBy: 'photography' },
+    { id: 'contingency', label: 'Contingency', weight: 5, fixed: true },
+  ],
 };
 
 /** Percentage points added to each prioritised category. */
@@ -57,6 +67,7 @@ export const MIN_CATERING_PER_GUEST: Record<EventType, number> = {
   wedding: 600,
   birthday: 250,
   community: 120,
+  corporate: 700,
 };
 
 /**

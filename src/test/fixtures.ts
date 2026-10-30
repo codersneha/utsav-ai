@@ -18,8 +18,9 @@ export const weddingDetails: EventDetails = {
   colors: 'pastel pink and mint',
   language: 'en',
   tradition: 'marwari',
-  ceremonies: ['mehendi', 'haldi', 'wedding', 'reception'],
+  ceremonies: ['mehendi', 'pithi', 'wedding', 'reception'],
   venueName: '',
+  venuePreference: '',
 };
 
 export const birthdayDetails: EventDetails = {
@@ -39,6 +40,7 @@ export const birthdayDetails: EventDetails = {
   tradition: 'modern',
   ceremonies: [],
   venueName: '',
+  venuePreference: '',
 };
 
 /** Raw model output for `weddingDetails` (Marwari), as Gemini returns it. */

@@ -89,6 +89,16 @@ const FALLBACK_SCHEDULES: Record<EventType, ScheduleItem[]> = {
     { time: '16:00', activity: 'Competitions and prize distribution' },
     { time: '18:00', activity: 'Closing; waste segregation and cleanup' },
   ],
+  corporate: [
+    { time: '08:00', activity: 'Venue setup, branding and AV check' },
+    { time: '09:00', activity: 'Registration and breakfast' },
+    { time: '10:00', activity: 'Welcome address and keynote' },
+    { time: '11:30', activity: 'Sessions or team activities' },
+    { time: '13:00', activity: 'Lunch and networking' },
+    { time: '14:30', activity: 'Panels, workshops or awards' },
+    { time: '17:00', activity: 'Closing remarks and group photo' },
+    { time: '19:00', activity: 'Dinner and entertainment' },
+  ],
 };
 
 /** Curated logistics used when Gemini is unavailable. */

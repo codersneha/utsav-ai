@@ -245,5 +245,6 @@ async function venueRequest(body: Record<string, string>): Promise<VenueResult> 
 /** Looks up a named venue on the map. */
 export const checkVenue = (name: string, city: string) => venueRequest({ action: 'check', name, city });
 
-/** Event venues near a city, nearest first. */
-export const findVenues = (city: string) => venueRequest({ action: 'search', city });
+/** Venues near a city that best match the kind of place wanted. */
+export const findVenues = (city: string, venueType = 'undecided', preference = '') =>
+  venueRequest({ action: 'search', city, venueType, preference });

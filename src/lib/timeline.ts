@@ -209,6 +209,68 @@ export const TIMELINE_TEMPLATES: Record<EventType, MilestoneSpec[]> = {
       priority: 'Low',
     },
   ],
+  corporate: [
+    {
+      id: 'goals',
+      task: 'Agree the goals, audience, agenda and budget owner',
+      daysBefore: 60,
+      priority: 'High',
+    },
+    {
+      id: 'venue',
+      task: 'Book the venue and room layout',
+      daysBefore: 45,
+      priority: 'High',
+      dependsOn: ['goals'],
+    },
+    {
+      id: 'speakers',
+      task: 'Confirm speakers, hosts and performers',
+      daysBefore: 35,
+      priority: 'High',
+      dependsOn: ['goals'],
+    },
+    {
+      id: 'vendors',
+      task: 'Book AV, catering, branding and travel',
+      daysBefore: 30,
+      priority: 'High',
+      dependsOn: ['venue'],
+    },
+    {
+      id: 'invites',
+      task: 'Send invitations and open registration',
+      daysBefore: 21,
+      priority: 'Medium',
+      dependsOn: ['venue'],
+    },
+    {
+      id: 'content',
+      task: 'Collect presentations and finalise the run-of-show',
+      daysBefore: 7,
+      priority: 'High',
+      dependsOn: ['speakers'],
+    },
+    {
+      id: 'rehearsal',
+      task: 'Tech rehearsal and venue walkthrough',
+      daysBefore: 1,
+      priority: 'High',
+      dependsOn: ['vendors', 'content'],
+    },
+    {
+      id: 'event',
+      task: 'Event day — run the agenda and track attendance',
+      daysBefore: 0,
+      priority: 'High',
+    },
+    {
+      id: 'report',
+      task: 'Send thank-you notes, feedback form and settle invoices',
+      daysBefore: -3,
+      priority: 'Low',
+    },
+  ],
 };
 
 function phaseFor(daysBefore: number, idealDaysBefore: number): Milestone['phase'] {

@@ -1,12 +1,23 @@
 /** Shared domain types for UtsavAI (used by both the browser app and the API). */
 
-export const EVENT_TYPES = ['wedding', 'birthday', 'community'] as const;
+export const EVENT_TYPES = ['wedding', 'birthday', 'community', 'corporate'] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 export const PRIORITIES = ['food', 'decor', 'photography', 'entertainment', 'venue'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
-export const VENUE_TYPES = ['undecided', 'banquet', 'outdoor', 'home', 'community-hall', 'temple'] as const;
+export const VENUE_TYPES = [
+  'undecided',
+  'banquet',
+  'outdoor',
+  'home',
+  'community-hall',
+  'temple',
+  'restaurant',
+  'cafe',
+  'hotel',
+  'office',
+] as const;
 export type VenueType = (typeof VENUE_TYPES)[number];
 
 export const DIETS = ['vegetarian', 'non-vegetarian', 'jain', 'vegan', 'gluten-free'] as const;
@@ -48,6 +59,8 @@ export interface EventDetails {
   ceremonies: string[];
   /** The venue, if already chosen. */
   venueName: string;
+  /** What kind of place the user would like, in their words (e.g. "rooftop with dine-in"). */
+  venuePreference: string;
 }
 
 export interface BudgetLine {
@@ -131,7 +144,11 @@ export interface VendorEntry {
   id: string;
   groupId: string;
   name: string;
+  /** Phone or email. */
   contact: string;
+  address?: string;
+  /** The user's own notes, e.g. what the quote includes. */
+  notes?: string;
   /** Quoted price in INR, 0 if not yet quoted. */
   quote: number;
   status: VendorStatus;
@@ -150,6 +167,8 @@ export interface CeremonyIdea {
   /** Colour names for this function. */
   palette: string[];
   decor: string[];
+  /** The AI judged the reference photo to match these ideas (absent for curated ideas). */
+  photoMatches?: boolean;
 }
 
 /** Dishes chosen for one course of the menu (always from the knowledge base). */
@@ -233,7 +252,32 @@ export interface Venue {
   lon: number;
   /** Distance from the city centre, when searching around a city. */
   distanceKm?: number;
+  /** Why it was suggested, e.g. Matches “rooftop”. */
+  match?: string;
   /** Google Maps search link — for photos, reviews and ratings. */
   mapsUrl: string;
   osmUrl: string;
+}
+
+export const RSVP_STATUSES = ['not-asked', 'maybe', 'likely', 'confirmed', 'declined'] as const;
+export type RsvpStatus = (typeof RSVP_STATUSES)[number];
+
+export const GUEST_SIDES = ['bride', 'groom', 'family', 'friends', 'work', 'neighbours', 'other'] as const;
+export type GuestSide = (typeof GUEST_SIDES)[number];
+
+/** One invited family or person in the guest ledger (entered by the user). */
+export interface GuestEntry {
+  id: string;
+  /** Family or person, e.g. "Sharma family". */
+  name: string;
+  /** How they are related, e.g. "Mama’s family", "College friends". */
+  relation: string;
+  side: GuestSide;
+  adults: number;
+  children: number;
+  /** Marked as an important guest. */
+  vip: boolean;
+  /** The invitation has been sent. */
+  invited: boolean;
+  rsvp: RsvpStatus;
 }

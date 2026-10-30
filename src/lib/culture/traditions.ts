@@ -1,11 +1,17 @@
+import type { EventType } from '../../types.js';
 import type { PhotoKey } from './photos.js';
 
 /**
- * Curated cultural knowledge: how each community actually celebrates.
- * The AI personalises *within* these facts (e.g. it may pick which Bengali
- * fish dishes to serve) but can never replace them (it cannot turn a
- * seated Bengali biye dinner into a buffet). Every menu the user sees is
- * validated against these lists.
+ * Curated cultural knowledge: how each community actually celebrates — the
+ * functions in order, their décor, the courses in the order they are served
+ * and how the meal is served. The AI personalises *within* these facts (it
+ * may pick which Bengali fish dishes to serve) but can never replace them (it
+ * cannot turn a seated Bengali biye dinner into a buffet). Every menu the
+ * user sees is validated against these lists.
+ *
+ * Dish costs are rough per-plate estimates for a mid-range metro caterer
+ * (INR, 2026). They exist only to fit the menu to the food budget and are
+ * always shown as estimates.
  */
 
 export const TRADITIONS = [
@@ -28,9 +34,12 @@ export type DishDiet = 'veg' | 'nonveg';
 export interface Dish {
   name: string;
   diet: DishDiet;
+  /** Estimated cost per plate in INR. */
+  cost: number;
   /** Safe for Jain guests: no onion, garlic or root vegetables. */
   jain?: boolean;
-  photo?: PhotoKey;
+  /** A must-have of this tradition: always served, never swapped out for a pricier dish. */
+  signature?: boolean;
 }
 
 export interface Course {
@@ -40,8 +49,10 @@ export interface Course {
   pick: [number, number];
   dishes: Dish[];
   note?: string;
-  /** Also served at birthdays and community events. */
+  /** Also served at birthdays, community and corporate events. */
   party?: boolean;
+  /** Only for these event types (e.g. the cake at a birthday). */
+  onlyFor?: EventType[];
   /** Only added when vegetarian or Jain guests need alternatives. */
   vegAlternative?: boolean;
 }
@@ -61,6 +72,7 @@ export interface Ceremony {
   decor: string[];
   /** What is typically eaten at this function. */
   food: string;
+  /** A décor photo of this kind of function, shown only when it fits the plan. */
   photo?: PhotoKey;
 }
 
@@ -69,13 +81,17 @@ export interface Tradition {
   label: string;
   /** How the wedding meal is served — e.g. "seated, never a buffet". */
   service: string;
+  /** Courses in the order they are served. */
   courses: Course[];
+  /** Functions in the order they happen. */
   ceremonies: Ceremony[];
   defaultCeremonies: string[];
 }
 
-const v = (name: string, photo?: PhotoKey, jain = false): Dish => ({ name, diet: 'veg', jain, photo });
-const nv = (name: string, photo?: PhotoKey): Dish => ({ name, diet: 'nonveg', photo });
+const v = (name: string, cost: number, jain = false): Dish => ({ name, diet: 'veg', cost, jain });
+const nv = (name: string, cost: number): Dish => ({ name, diet: 'nonveg', cost });
+/** Marks a must-have dish. */
+const must = (dish: Dish): Dish => ({ ...dish, signature: true });
 
 const GOLD: Swatch = { name: 'Gold', hex: '#c9a227' };
 const IVORY: Swatch = { name: 'Ivory', hex: '#f6efe2' };
@@ -90,8 +106,10 @@ const MAROON: Swatch = { name: 'Maroon', hex: '#7b1e3a' };
 const ORANGE: Swatch = { name: 'Saffron orange', hex: '#f08a24' };
 const TEAL: Swatch = { name: 'Peacock teal', hex: '#0f766e' };
 const WHITE: Swatch = { name: 'White', hex: '#ffffff' };
+const JASMINE: Swatch = { name: 'Jasmine white', hex: '#fbf8ef' };
+const KUMKUM: Swatch = { name: 'Kumkum red', hex: '#a4161a' };
+const EMERALD: Swatch = { name: 'Emerald green', hex: '#1b6b4a' };
 
-/** Shared ceremonies, adapted per tradition below. */
 const mehendi = (
   about = 'Henna is applied to the bride’s hands and feet while family sing and dance.',
 ): Ceremony => ({
@@ -106,16 +124,17 @@ const mehendi = (
     'A swing (jhoola) or photo nook for the bride',
   ],
   food: 'Chaat counters, kulfi and chilled sherbets — easy to eat with henna on.',
-  photo: 'mehendi',
 });
 
 const haldi = (
-  name = 'Haldi',
-  about = 'Turmeric paste is applied to the bride and groom for blessings and glow.',
+  name: string,
+  about: string,
+  id = 'haldi',
+  when = 'Morning of or the day before the wedding',
 ): Ceremony => ({
-  id: 'haldi',
+  id,
   name,
-  when: 'Morning of or the day before the wedding',
+  when,
   about,
   palette: [TURMERIC, MARIGOLD, LEAF],
   decor: [
@@ -127,9 +146,9 @@ const haldi = (
   photo: 'haldi',
 });
 
-const sangeet = (name = 'Sangeet'): Ceremony => ({
+const sangeet = (): Ceremony => ({
   id: 'sangeet',
-  name,
+  name: 'Sangeet',
   when: 'Evening, 1–2 days before',
   about: 'An evening of music and choreographed family performances.',
   palette: [RANI, ORANGE, GOLD],
@@ -160,6 +179,22 @@ const reception = (
   photo: 'reception',
 });
 
+const engagement = (name: string, about: string, id = 'engagement'): Ceremony => ({
+  id,
+  name,
+  when: 'Weeks or months before the wedding',
+  about,
+  palette: [RANI, GOLD, IVORY],
+  decor: [
+    'A flower-decked seat for the couple',
+    'Brass thalis with sweets, fruit and gifts',
+    'Marigold and mango-leaf toran at the entrance',
+  ],
+  food: 'Sweets, snacks and a family lunch or dinner.',
+});
+
+const MOCKTAILS = (cost = 90) => v('Mocktail counter', cost, true);
+
 export const TRADITION_DATA: Record<TraditionId, Tradition> = {
   bengali: {
     id: 'bengali',
@@ -174,12 +209,13 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         note: 'Served from stalls while guests arrive',
         party: true,
         dishes: [
-          v('Phuchka', 'phuchka'),
-          nv('Fish fry', 'fishFry'),
-          v('Papri chaat', 'papdiChaat'),
-          v('Ghugni', 'ghugni', true),
-          v('Vegetable chop'),
-          nv('Fish kabiraji'),
+          must(v('Phuchka', 40)),
+          must(nv('Fish fry', 140)),
+          v('Papri chaat', 50),
+          v('Ghugni', 35, true),
+          v('Mochar chop', 45),
+          v('Vegetable chop', 40),
+          nv('Fish kabiraji', 160),
         ],
       },
       {
@@ -187,10 +223,10 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         name: 'First course',
         pick: [1, 1],
         dishes: [
-          v('Luchi with aloor dom', 'luchiAlurDom'),
-          v('Radhaballabhi with chholar dal', 'cholarDal', true),
-          v('Kochuri with chholar dal', 'cholarDal', true),
-          v('Kochuri with aloor dom', 'luchiAlurDom'),
+          v('Luchi with aloor dom', 70),
+          v('Radhaballabhi with chholar dal', 80, true),
+          v('Kochuri with chholar dal', 75, true),
+          v('Kochuri with aloor dom', 75),
         ],
       },
       {
@@ -198,22 +234,25 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         name: 'Rice & dal',
         pick: [1, 1],
         dishes: [
-          nv('Rice with muri ghonto', 'muriGhonto'),
-          v('Rice with moong dal and jhuri aloo bhaja', 'bengaliThali'),
-          v('Rice with sona moong dal', 'bengaliThali', true),
+          nv('Rice with muri ghonto', 90),
+          v('Rice with moong dal and jhuri aloo bhaja', 60),
+          v('Rice with sona moong dal', 55, true),
         ],
       },
       {
         id: 'mains',
         name: 'Fish & meat',
-        pick: [2, 2],
+        pick: [2, 3],
+        note: 'Two is usual; grand weddings serve three',
         party: true,
         dishes: [
-          nv('Bhetki macher paturi', 'bhetkiPaturi'),
-          nv('Chingri macher malai curry', 'chingriMalai'),
-          nv('Doi katla', 'doiKatla'),
-          nv('Mutton kosha', 'muttonCurry'),
-          nv('Shorshe ilish', 'shorsheIlish'),
+          nv('Katla kalia', 140),
+          nv('Chicken kosha', 140),
+          nv('Doi katla', 150),
+          nv('Bhetki macher paturi', 220),
+          nv('Mutton kosha', 260),
+          nv('Chingri macher malai curry', 300),
+          nv('Shorshe ilish', 450),
         ],
       },
       {
@@ -223,34 +262,35 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         vegAlternative: true,
         party: true,
         dishes: [
-          v('Chhanar dalna'),
-          v('Dhokar dalna'),
-          v('Mochar ghonto'),
-          v('Potoler dolma', undefined, true),
+          v('Mochar ghonto', 80),
+          v('Dhokar dalna', 90),
+          v('Echor dalna', 100),
+          v('Potoler dolma', 100, true),
+          v('Chhanar dalna', 110),
         ],
       },
       {
         id: 'polao',
         name: 'Polao',
         pick: [1, 1],
-        dishes: [v('Basanti polao', 'basantiPolao', true), v('Ghee bhaat', undefined, true)],
+        dishes: [v('Ghee bhaat', 55, true), v('Basanti polao', 70, true)],
       },
       {
         id: 'chutney',
         name: 'Chutney & papad',
         pick: [1, 1],
         dishes: [
-          v('Aamer chutney', 'mangoChutney', true),
-          v('Khejur-aamshotto chutney', undefined, true),
-          v('Tomato-khejur chutney', undefined, true),
-          v('Plastic chutney (raw papaya)', undefined, true),
+          v('Aamer chutney', 20, true),
+          v('Tomato-khejur chutney', 20, true),
+          v('Khejur-aamshotto chutney', 25, true),
+          v('Plastic chutney (raw papaya)', 25, true),
         ],
       },
       {
         id: 'doi',
         name: 'Doi',
         pick: [1, 1],
-        dishes: [v('Mishti doi', 'mishtiDoi', true), v('Tok-mishti doi', 'mishtiDoi', true)],
+        dishes: [must(v('Mishti doi', 35, true)), v('Tok-mishti doi', 35, true)],
       },
       {
         id: 'mishti',
@@ -258,13 +298,14 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         pick: [1, 2],
         party: true,
         dishes: [
-          v('Rosogolla (white or baked)', 'rosogolla', true),
-          v('Sandesh (makha or kancha golla)', 'sandesh', true),
-          v('Nolen gur ice cream (winter special)', 'nolenGurIceCream', true),
-          v('Baked mihidana with rabri', 'mihidana', true),
+          must(v('Rosogolla (white or baked)', 40, true)),
+          v('Langcha', 40, true),
+          v('Sandesh (makha or kancha golla)', 45, true),
+          v('Nolen gur ice cream (winter special)', 70, true),
+          v('Baked mihidana with rabri', 70, true),
         ],
       },
-      { id: 'finish', name: 'To finish', pick: [1, 1], dishes: [v('Mishti paan', undefined, true)] },
+      { id: 'finish', name: 'To finish', pick: [1, 1], dishes: [v('Mishti paan', 25, true)] },
       {
         id: 'drinks',
         name: 'Drinks',
@@ -272,10 +313,10 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         note: 'Bengali-themed drinks, or a mocktail counter for a contemporary feel',
         party: true,
         dishes: [
-          v('Aam pora shorbot', 'aamPanna', true),
-          v('Gondhoraj ghol', undefined, true),
-          v('Daab (tender coconut) shorbot', undefined, true),
-          v('Mocktail counter', 'mocktails', true),
+          v('Aam pora shorbot', 35, true),
+          v('Gondhoraj ghol', 35, true),
+          v('Daab (tender coconut) shorbot', 60, true),
+          MOCKTAILS(),
         ],
       },
     ],
@@ -307,7 +348,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'Kula (winnowing trays) holding turmeric and the tattva gifts',
         ],
         food: 'Light: luchi with chholar dal or aloor dom and sweets (after the dodhi-mongol with curd and chira at dawn).',
-        photo: 'gayeHolud',
       },
       {
         id: 'biye',
@@ -321,7 +361,6 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
           'Red-and-white alpana, mango leaves and terracotta prodip lamps',
         ],
         food: 'The full seated wedding dinner — see the menu.',
-        photo: 'bengaliWedding',
       },
       reception(
         'Bou Bhaat (reception)',
@@ -336,47 +375,66 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
   punjabi: {
     id: 'punjabi',
     label: 'Punjabi',
-    service: 'A lavish buffet with live counters — tandoor, chaat and dessert counters are expected.',
+    service:
+      'A lavish buffet with live counters — tandoor, chaat and dessert counters are expected. After a Sikh Anand Karaj in the morning, guests are served breakfast or a langar-style lunch.',
     courses: [
       {
-        id: 'starters',
-        name: 'Starters',
-        pick: [3, 4],
+        id: 'chaat',
+        name: 'Chaat counter',
+        pick: [1, 2],
         party: true,
         dishes: [
-          v('Paneer tikka', 'paneerTikka'),
-          nv('Amritsari fish', 'amritsariFish'),
-          nv('Chicken tikka'),
-          v('Aloo tikki chaat'),
-          v('Dahi bhalla', undefined, true),
-          v('Hara bhara kebab'),
+          must(v('Golgappe', 40)),
+          v('Papdi chaat', 45),
+          v('Dahi bhalla', 45, true),
+          v('Aloo tikki chaat', 50),
+        ],
+      },
+      {
+        id: 'starters',
+        name: 'Tandoor starters',
+        pick: [2, 4],
+        party: true,
+        dishes: [
+          v('Hara bhara kebab', 70),
+          v('Tandoori soya chaap', 90),
+          v('Paneer tikka', 110),
+          nv('Chicken tikka', 150),
+          nv('Amritsari fish', 180),
+          nv('Mutton seekh kebab', 200),
         ],
       },
       {
         id: 'mains',
         name: 'Mains',
-        pick: [3, 4],
+        pick: [3, 5],
         party: true,
         dishes: [
-          v('Dal makhani', 'dalMakhani'),
-          v('Sarson da saag with makki di roti (winter)', 'sarsonSaag'),
-          nv('Butter chicken', 'butterChicken'),
-          v('Kadhai paneer'),
-          nv('Rara mutton'),
-          v('Amritsari chole', 'choleBhature'),
+          v('Amritsari chole', 60),
+          must(v('Dal makhani', 70)),
+          v('Sarson da saag with makki di roti (winter)', 90),
+          v('Malai kofta', 100),
+          v('Kadhai paneer', 110),
+          nv('Butter chicken', 170),
+          nv('Rara mutton', 260),
         ],
       },
       {
         id: 'breads',
         name: 'Breads',
         pick: [2, 3],
-        dishes: [v('Butter naan'), v('Lachha paratha'), v('Tandoori roti'), v('Amritsari kulcha')],
+        dishes: [
+          v('Tandoori roti', 20),
+          v('Butter naan', 30),
+          v('Lachha paratha', 35),
+          v('Amritsari kulcha', 45),
+        ],
       },
       {
         id: 'rice',
         name: 'Rice',
         pick: [1, 1],
-        dishes: [v('Jeera rice', undefined, true), v('Veg pulao'), nv('Mutton biryani', 'biryani')],
+        dishes: [v('Jeera rice', 35), v('Veg pulao', 45), nv('Mutton biryani', 220)],
       },
       {
         id: 'desserts',
@@ -384,11 +442,12 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         pick: [2, 3],
         party: true,
         dishes: [
-          v('Gulab jamun', 'gulabJamun', true),
-          v('Gajar ka halwa (winter)', 'gajarHalwa'),
-          v('Jalebi with rabri', 'rabri', true),
-          v('Phirni', 'phirni', true),
-          v('Kulfi', undefined, true),
+          v('Gulab jamun', 35),
+          v('Phirni', 45),
+          v('Gajar ka halwa (winter)', 60),
+          v('Jalebi with rabri', 60),
+          v('Moong dal halwa', 65),
+          v('Kulfi falooda', 70),
         ],
       },
       {
@@ -396,56 +455,88 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         name: 'Drinks',
         pick: [1, 2],
         party: true,
-        dishes: [
-          v('Patiala lassi', 'lassi', true),
-          v('Masala chaas', undefined, true),
-          v('Mocktail counter', 'mocktails', true),
-        ],
+        dishes: [v('Shikanji', 30), v('Masala chaas', 30), v('Patiala lassi', 50), MOCKTAILS()],
       },
     ],
     ceremonies: [
+      engagement(
+        'Roka',
+        'The families formally accept the match with gifts, sweets and a small prayer.',
+        'roka',
+      ),
+      {
+        id: 'chunni',
+        name: 'Chunni Chadana',
+        when: 'Before the wedding, often with the engagement',
+        about: 'The groom’s family drapes a red chunni over the bride’s head and gifts her jewellery.',
+        palette: [MAROON, GOLD, RANI],
+        decor: [
+          'A phulkari-draped seat for the bride',
+          'Trays of gifts on embroidered cloth',
+          'Red and gold accents with marigold strings',
+        ],
+        food: 'Sweets and a family meal.',
+      },
       mehendi(),
       sangeet(),
-      haldi('Haldi (Vatna)'),
+      {
+        id: 'jaggo',
+        name: 'Jaggo',
+        when: 'The night before the wedding',
+        about:
+          'Relatives carry a decorated brass pot (jaggo) of lit diyas on the head, dancing through the neighbourhood singing boliyan.',
+        palette: [ORANGE, RANI, GOLD],
+        decor: [
+          'A brass gaagar topped with clay diyas',
+          'Phulkari dupattas as drapes',
+          'A dhol corner and string lights along the route',
+        ],
+        food: 'Late-night snacks, chai and pakoras.',
+      },
+      haldi(
+        'Maiyan (vatna)',
+        'Married women apply vatna — turmeric, flour and mustard oil — while singing, a day or two before the wedding.',
+        'maiyan',
+      ),
       {
         id: 'choora',
-        name: 'Choora',
+        name: 'Choora & Kaleere',
         when: 'Morning of the wedding',
         about:
-          'The bride’s maternal uncle gifts the red-and-white choora bangles; kaleeras are tied to them.',
-        palette: [VERMILION, IVORY, GOLD],
+          'The bride’s maternal uncle gives her red-and-ivory choora bangles; friends tie on golden kaleere.',
+        palette: [MAROON, IVORY, GOLD],
         decor: [
-          'A low stool with phulkari drapes',
-          'Brass plates for the choora and kaleeras',
-          'Marigold and rose petals',
+          'A low seat with a phulkari spread',
+          'A thali with the choora soaked in milk',
+          'A hanging kaleere backdrop for photos',
         ],
-        food: 'A family breakfast — parathas, chole and lassi.',
+        food: 'Breakfast — puri, chole and sweets.',
       },
       {
         id: 'wedding',
         name: 'Anand Karaj or Pheras',
-        when: 'Morning (Sikh) or evening (Hindu)',
+        when: 'Morning (Anand Karaj) or evening (pheras)',
         about:
-          'Sikh couples take four laavan around the Guru Granth Sahib; Hindu couples take pheras around the sacred fire.',
-        palette: [ORANGE, MAROON, GOLD],
+          'Sikh couples walk four laavan around the Guru Granth Sahib in the morning; Hindu Punjabi weddings take seven pheras around the fire, usually at night.',
+        palette: [RANI, GOLD, IVORY],
         decor: [
-          'Simple, respectful floral rows in the gurdwara or a mandap with drapes',
-          'Rose and marigold aisles',
-          'Phulkari accents',
+          'A floral canopy over the palki sahib or the mandap',
+          'A rose-petal path for the baraat entry',
+          'Marigold and rose strings at the entrance',
         ],
-        food: 'Langar at the gurdwara, or the wedding dinner — see the menu.',
-        photo: 'sikhWedding',
+        food: 'The wedding feast — after an Anand Karaj, breakfast or a langar-style lunch.',
+        photo: 'pheras',
       },
       reception(),
     ],
-    defaultCeremonies: ['mehendi', 'sangeet', 'haldi', 'wedding', 'reception'],
+    defaultCeremonies: ['mehendi', 'sangeet', 'maiyan', 'choora', 'wedding', 'reception'],
   },
 
   marwari: {
     id: 'marwari',
     label: 'Marwari / Rajasthani',
     service:
-      'Often a grand buffet; traditional families also hold a seated pangat served on thalis. Largely vegetarian and frequently Jain-friendly.',
+      'A grand buffet, or a seated pangat served on thalis for traditional families. Largely vegetarian, and many guests need Jain food — no onion, garlic or root vegetables.',
     courses: [
       {
         id: 'starters',
@@ -453,41 +544,51 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         pick: [2, 3],
         party: true,
         dishes: [
-          v('Pyaaz kachori', 'pyaazKachori'),
-          v('Mirchi vada'),
-          v('Moong dal kachori', undefined, true),
-          v('Kanji vada', undefined, true),
+          v('Kanji vada', 30, true),
+          v('Mirchi vada', 35),
+          v('Pyaaz kachori', 40),
+          v('Moong dal kachori', 40, true),
+          v('Dal pakwan', 45, true),
         ],
       },
       {
         id: 'mains',
         name: 'Mains',
-        pick: [3, 4],
+        pick: [3, 5],
         party: true,
         dishes: [
-          v('Dal baati churma', 'dalBaati', true),
-          v('Gatte ki sabzi', undefined, true),
-          v('Ker sangri', 'kerSangri', true),
-          v('Papad ki sabzi', undefined, true),
-          v('Rajasthani kadhi', undefined, true),
+          v('Rajasthani kadhi', 40, true),
+          v('Panchmel dal', 50, true),
+          v('Papad ki sabzi', 50, true),
+          v('Gatte ki sabzi', 70, true),
+          v('Ker sangri', 90, true),
+          must(v('Dal baati churma', 90, true)),
+          v('Paneer tikka masala', 110),
         ],
       },
       {
         id: 'breads',
         name: 'Breads',
         pick: [1, 2],
-        dishes: [v('Bajre ki roti', undefined, true), v('Missi roti'), v('Puri', undefined, true)],
+        dishes: [v('Puri', 25, true), v('Missi roti', 25, true), v('Bajre ki roti', 25, true)],
+      },
+      {
+        id: 'rice',
+        name: 'Rice',
+        pick: [0, 1],
+        dishes: [v('Jeera rice', 35, true), v('Rajasthani pulao', 45, true)],
       },
       {
         id: 'desserts',
-        name: 'Desserts',
-        pick: [2, 2],
+        name: 'Sweets',
+        pick: [2, 3],
         party: true,
         dishes: [
-          v('Ghevar', 'ghevar', true),
-          v('Moong dal halwa', undefined, true),
-          v('Malpua with rabri', 'rabri', true),
-          v('Churma ladoo', undefined, true),
+          v('Balushahi', 35, true),
+          v('Churma ladoo', 40, true),
+          v('Moong dal halwa', 65, true),
+          v('Malpua with rabri', 70, true),
+          v('Ghevar', 80, true),
         ],
       },
       {
@@ -495,96 +596,139 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         name: 'Drinks',
         pick: [1, 2],
         party: true,
-        dishes: [
-          v('Chaas', undefined, true),
-          v('Kesar thandai', undefined, true),
-          v('Mocktail counter', 'mocktails', true),
-        ],
+        dishes: [v('Chaas', 25, true), v('Kesar thandai', 55, true), MOCKTAILS()],
       },
     ],
     ceremonies: [
+      engagement(
+        'Tilak',
+        'Men of the bride’s family visit the groom’s home to apply tilak and give gifts.',
+        'tilak',
+      ),
+      haldi(
+        'Pithi Dastoor',
+        'Women apply pithi — turmeric and sandalwood paste. After it, the bride or groom stays at home until the wedding.',
+        'pithi',
+        'Two or three days before the wedding',
+      ),
       mehendi(),
-      haldi('Pithi Dastoor (haldi)'),
+      {
+        id: 'mayra',
+        name: 'Mayra (Bhaat)',
+        when: 'A day or two before the wedding',
+        about:
+          'The maternal family (nanihal) arrives with clothes, jewellery and gifts and is welcomed with songs.',
+        palette: [ORANGE, MAROON, GOLD],
+        decor: [
+          'A welcome arch with bandhani drapes and marigolds',
+          'Display tables for the mayra gifts',
+          'Seating for the nanihal family',
+        ],
+        food: 'A family lunch — dal baati churma is a favourite.',
+      },
       {
         id: 'mahira',
         name: 'Mahira Dastoor',
-        when: '1–2 days before',
-        about:
-          'The maternal uncle’s family arrives with gifts, clothes and jewellery for the bride or groom.',
-        palette: [RANI, ORANGE, GOLD],
-        decor: [
-          'Leheriya and bandhani drapes',
-          'Brass thalis with gifts on display',
-          'A welcome path of marigold',
-        ],
-        food: 'Rajasthani snacks and sweets for the visiting family.',
+        when: 'A day before',
+        about: 'The maternal uncle brings gifts for the family; a joyful family ritual.',
+        palette: [ORANGE, MAROON, GOLD],
+        decor: ['Bandhani drapes', 'Brass thalis for the gifts', 'Rajasthani puppets and lanterns'],
+        food: 'Rajasthani snacks and sweets.',
       },
       sangeet(),
       {
-        id: 'wedding',
-        name: 'Pheras',
-        when: 'Evening or night',
-        about: 'Seven pheras around the sacred fire under a mandap.',
-        palette: [VERMILION, GOLD, MARIGOLD],
+        id: 'nikasi',
+        name: 'Nikasi (baraat)',
+        when: 'Evening of the wedding',
+        about: 'After the sehra-bandi, the groom rides a decorated mare (ghodi) with the baraat.',
+        palette: [ORANGE, RANI, GOLD],
         decor: [
-          'A mandap with mirror-work and marigold',
-          'Brass lamps and diyas',
-          'Rajasthani puppets or lanterns as accents',
+          'A decorated ghodi and a band',
+          'A safa (turban) station for the baraatis',
+          'Mashaal lights along the procession route',
         ],
-        food: 'The wedding dinner — see the menu.',
-        photo: 'pheras',
+        food: 'Welcome drinks and snacks for the baraat.',
+      },
+      {
+        id: 'wedding',
+        name: 'Phere',
+        when: 'Late evening or night, at the muhurat',
+        about: 'Varmala, kanyadaan and seven pheras around the sacred fire in a decorated mandap.',
+        palette: [RANI, ORANGE, GOLD],
+        decor: [
+          'A mandap with Rajasthani jharokha arches',
+          'A marigold and rose canopy',
+          'Brass lamps and rangoli',
+        ],
+        food: 'The wedding feast — see the menu.',
+        photo: 'mandap',
       },
       reception(),
     ],
-    defaultCeremonies: ['mehendi', 'haldi', 'sangeet', 'wedding', 'reception'],
+    defaultCeremonies: ['pithi', 'mehendi', 'mayra', 'sangeet', 'wedding', 'reception'],
   },
 
   gujarati: {
     id: 'gujarati',
     label: 'Gujarati',
-    service: 'A buffet or a seated Gujarati thali — almost always vegetarian, with Jain options.',
+    service:
+      'A buffet or a seated Gujarati thali — almost always vegetarian, with Jain options. Farsan and a sweet are eaten with the meal, not only at the end.',
     courses: [
       {
-        id: 'starters',
+        id: 'farsan',
         name: 'Farsan',
         pick: [2, 3],
         party: true,
         dishes: [
-          v('Dhokla', 'dhokla', true),
-          v('Khandvi', 'khandvi', true),
-          v('Patra', undefined, true),
-          v('Lilva kachori'),
+          must(v('Khaman dhokla', 25, true)),
+          v('Handvo', 30, true),
+          v('Khandvi', 30, true),
+          v('Patra', 30, true),
+          v('Lilva kachori', 40, true),
         ],
       },
       {
-        id: 'mains',
-        name: 'Shaak & dal',
-        pick: [3, 3],
+        id: 'shaak',
+        name: 'Shaak (vegetables)',
+        pick: [2, 4],
         party: true,
         dishes: [
-          v('Undhiyu (winter)', 'undhiyu'),
-          v('Sev tameta nu shaak', undefined, true),
-          v('Bharela ringan', undefined, true),
-          v('Gujarati kadhi', undefined, true),
-          v('Gujarati dal', undefined, true),
+          v('Sev tameta nu shaak', 40, true),
+          v('Bharela ringan', 50, true),
+          v('Lilva tuver nu shaak', 50, true),
+          v('Paneer lababdar', 90),
+          v('Undhiyu (winter)', 90),
         ],
+      },
+      {
+        id: 'dal-kadhi',
+        name: 'Dal & kadhi',
+        pick: [1, 2],
+        dishes: [v('Gujarati dal', 25, true), v('Gujarati kadhi', 25, true)],
       },
       {
         id: 'breads',
-        name: 'Rotli & rice',
-        pick: [2, 2],
-        dishes: [v('Puri', undefined, true), v('Rotli', undefined, true), v('Jeera rice', undefined, true)],
+        name: 'Breads',
+        pick: [1, 2],
+        dishes: [v('Rotli', 15, true), v('Puri', 20, true), v('Bajra rotla', 20, true)],
       },
       {
-        id: 'desserts',
-        name: 'Mithai',
+        id: 'rice',
+        name: 'Rice',
+        pick: [1, 1],
+        dishes: [v('Jeera rice', 30, true), v('Vaghareli khichdi', 30, true), v('Veg pulao', 40, true)],
+      },
+      {
+        id: 'sweets',
+        name: 'Sweets',
         pick: [1, 2],
         party: true,
         dishes: [
-          v('Shrikhand', 'shrikhandPuri', true),
-          v('Basundi', 'basundi', true),
-          v('Mohanthal', undefined, true),
-          v('Jalebi', undefined, true),
+          v('Jalebi', 35, true),
+          v('Mohanthal', 45, true),
+          v('Shrikhand', 50, true),
+          v('Doodh pak', 50, true),
+          v('Basundi', 55, true),
         ],
       },
       {
@@ -592,10 +736,15 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         name: 'Drinks',
         pick: [1, 2],
         party: true,
-        dishes: [v('Chaas', undefined, true), v('Mocktail counter', 'mocktails', true)],
+        dishes: [v('Chaas', 20, true), v('Variyali sharbat', 30, true), MOCKTAILS()],
       },
     ],
     ceremonies: [
+      engagement(
+        'Gol Dhana',
+        'The engagement: jaggery (gol) and coriander seeds (dhana) are shared to seal the match.',
+        'gol-dhana',
+      ),
       {
         id: 'mandvo',
         name: 'Mandvo Mahurat',
@@ -605,358 +754,528 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         decor: ['Mango-leaf torans', 'A kalash and diyas', 'Rangoli at the entrance'],
         food: 'A simple family lunch.',
       },
-      haldi('Pithi (haldi)'),
+      haldi(
+        'Pithi',
+        'Turmeric and sandalwood pithi is applied to the bride and groom at their homes.',
+        'pithi',
+      ),
       mehendi(),
       {
         id: 'garba',
-        name: 'Garba / Dandiya night',
+        name: 'Garba & Dandiya Raas',
         when: 'Evening before the wedding',
-        about: 'Family and friends dance garba and raas with dandiya sticks.',
+        about: 'Family and friends dance garba around a lamp and play raas with dandiya sticks.',
         palette: [RANI, ORANGE, TEAL],
         decor: [
-          'A central garbo (lamp) with a circular dance floor',
+          'A central garbo (lit pot) with space to dance around it',
           'Mirror-work and bandhani drapes',
-          'Hanging lanterns',
+          'Coloured dandiya sticks for every guest',
         ],
-        food: 'Snack counters and chaas between rounds of dance.',
-        photo: 'garba',
+        food: 'Snacks, chaat and drinks for dancers — farsan and chaas.',
+      },
+      {
+        id: 'mameru',
+        name: 'Mameru',
+        when: 'A day before the wedding',
+        about: 'The bride’s maternal uncle brings the panetar sari, jewellery and gifts.',
+        palette: [WHITE, VERMILION, GOLD],
+        decor: [
+          'A display of the mameru gifts on brass trays',
+          'Red-and-white panetar-inspired drapes',
+          'Seating for the maternal family',
+        ],
+        food: 'A family meal.',
       },
       {
         id: 'wedding',
-        name: 'Wedding (Hast Milap & Pheras)',
-        when: 'Day or evening',
-        about: 'The couple’s hands are joined, followed by the pheras around the sacred fire.',
-        palette: [VERMILION, GOLD, LEAF],
-        decor: ['A mandap with marigold and mango leaves', 'Brass diyas', 'Rangoli around the mandap'],
-        food: 'The wedding meal — see the menu.',
-        photo: 'pheras',
+        name: 'Hasta Melap & Mangal Fera',
+        when: 'At the muhurat',
+        about:
+          'The groom is welcomed with ponkhvu, then the couple’s hands are joined (hasta melap) and they take four mangal feras.',
+        palette: [VERMILION, WHITE, GOLD],
+        decor: [
+          'A mandap with banana plants and mango leaves',
+          'Marigold and rose strings',
+          'Brass diyas and rangoli',
+        ],
+        food: 'The wedding thali or buffet — see the menu.',
+        photo: 'mandap',
       },
       reception(),
     ],
-    defaultCeremonies: ['haldi', 'mehendi', 'garba', 'wedding', 'reception'],
+    defaultCeremonies: ['mandvo', 'pithi', 'mehendi', 'garba', 'wedding', 'reception'],
   },
 
   marathi: {
     id: 'marathi',
-    label: 'Maharashtrian',
+    label: 'Marathi',
     service:
-      'Traditionally a seated pangat served on banana leaves or thalis; many weddings now add a buffet.',
+      'Traditionally a seated pangat on banana leaves or thalis, served in order: koshimbir, chutney and bhaji on the leaf, then varan-bhaat with ghee and lemon, masale bhaat, puris and the sweet, with mattha to finish. Many weddings now add a buffet.',
     courses: [
       {
         id: 'starters',
-        name: 'Starters',
-        pick: [2, 2],
+        name: 'Snacks',
+        pick: [0, 2],
+        note: 'Only at modern weddings; not part of the pangat',
+        party: true,
+        dishes: [v('Batata vada', 25), v('Kothimbir vadi', 30), v('Alu vadi', 30), v('Sabudana vada', 35)],
+      },
+      {
+        id: 'leaf',
+        name: 'On the leaf',
+        pick: [2, 4],
         party: true,
         dishes: [
-          v('Kothimbir vadi', undefined, true),
-          v('Alu vadi', undefined, true),
-          v('Sabudana vada'),
-          v('Batata vada'),
+          v('Chutney', 10, true),
+          v('Koshimbir', 15, true),
+          v('Batata bhaji', 25),
+          v('Matki usal', 30),
+          v('Bharli vangi', 45),
         ],
       },
       {
-        id: 'mains',
-        name: 'Mains',
-        pick: [2, 3],
-        party: true,
-        dishes: [
-          v('Masale bhaat', 'masaleBhaat'),
-          v('Varan bhaat with ghee and lemon', undefined, true),
-          v('Batata bhaji'),
-          v('Matki usal'),
-        ],
+        id: 'varan-bhaat',
+        name: 'Varan-bhaat',
+        pick: [1, 1],
+        dishes: [must(v('Varan bhaat with ghee and lemon', 30, true))],
+      },
+      {
+        id: 'masale-bhaat',
+        name: 'Masale bhaat',
+        pick: [1, 1],
+        dishes: [v('Masale bhaat', 45), v('Vangi bhaat', 45)],
       },
       {
         id: 'breads',
-        name: 'Breads',
+        name: 'Puris & polis',
         pick: [1, 2],
-        dishes: [
-          v('Puran poli', 'puranPoli', true),
-          v('Puri', undefined, true),
-          v('Chapati', undefined, true),
-        ],
+        dishes: [v('Chapati', 15, true), v('Puri', 20, true)],
       },
       {
-        id: 'desserts',
-        name: 'Desserts',
+        id: 'sweets',
+        name: 'Sweets',
         pick: [1, 2],
         party: true,
         dishes: [
-          v('Shrikhand or amrakhand', 'shrikhandPuri', true),
-          v('Jilebi', undefined, true),
-          v('Ukadiche modak', 'modak', true),
-          v('Basundi', 'basundi', true),
+          must(v('Jilebi', 35, true)),
+          v('Puran poli with ghee', 45, true),
+          v('Shrikhand or amrakhand', 50, true),
+          v('Ukadiche modak', 50, true),
+          v('Basundi', 55, true),
         ],
+      },
+      {
+        id: 'finish',
+        name: 'To finish',
+        pick: [1, 1],
+        dishes: [must(v('Mattha (spiced buttermilk)', 20, true)), v('Sol kadhi', 25, true)],
       },
       {
         id: 'drinks',
         name: 'Drinks',
-        pick: [1, 2],
+        pick: [0, 1],
         party: true,
-        dishes: [
-          v('Sol kadhi', 'solKadhi'),
-          v('Panha (raw mango)', undefined, true),
-          v('Mocktail counter', 'mocktails', true),
-        ],
+        dishes: [v('Panha (raw mango)', 30, true), MOCKTAILS()],
       },
     ],
     ceremonies: [
-      haldi('Halad'),
+      engagement(
+        'Sakharpuda',
+        'The engagement: the groom’s family gives the bride a sari and sugar (sakhar), and rings are exchanged.',
+        'sakharpuda',
+      ),
+      haldi(
+        'Halad Chadavne',
+        'Turmeric is first applied to the groom; what remains is taken to the bride.',
+        'halad',
+      ),
       mehendi('A newer addition to many Maharashtrian weddings.'),
       {
-        id: 'wedding',
-        name: 'Wedding (Antarpat & Mangalashtak)',
-        when: 'Morning or afternoon muhurat',
-        about:
-          'A cloth (antarpat) separates the couple while mangalashtak verses are sung, then garlands are exchanged.',
+        id: 'simant-pujan',
+        name: 'Simant Pujan',
+        when: 'Evening before or morning of the wedding',
+        about: 'The bride’s family welcomes the groom’s family at the venue with a puja.',
         palette: [ORANGE, LEAF, GOLD],
         decor: [
-          'A mandap with mango leaves and marigold',
-          'Paithani-inspired drapes',
-          'Rangoli and brass samai lamps',
+          'Rangoli and diyas at the entrance',
+          'Paithani-draped seating for the elders',
+          'A banana-leaf and marigold toran',
+        ],
+        food: 'Tea, snacks and sweets for the groom’s family.',
+      },
+      {
+        id: 'lagna',
+        name: 'Lagna (Antarpat & Mangalashtak)',
+        when: 'Morning or afternoon muhurat',
+        about:
+          'An antarpat cloth separates the couple while mangalashtak verses are sung; when it drops they exchange garlands, then take the saptapadi.',
+        palette: [ORANGE, LEAF, GOLD],
+        decor: [
+          'A mandap with banana plants and mango leaves',
+          'An antarpat cloth in auspicious colours',
+          'Marigold and mogra strings, rangoli and brass samai lamps',
         ],
         food: 'The wedding pangat — see the menu.',
         photo: 'mandap',
       },
       reception(),
     ],
-    defaultCeremonies: ['haldi', 'wedding', 'reception'],
+    defaultCeremonies: ['halad', 'simant-pujan', 'lagna', 'reception'],
   },
 
   tamil: {
     id: 'tamil',
     label: 'Tamil',
     service:
-      'Seated and served on banana leaves (virundhu) in a set order; vegetarian for most Hindu weddings.',
+      'The wedding lunch (kalyana saapadu) is served on a banana leaf to seated guests in a set order: vegetables, vadai and appalam on the leaf, payasam, then rice with paruppu and ghee, sambar, kuzhambu, rasam and finally curd. Vegetarian for most Hindu weddings.',
     courses: [
+      {
+        id: 'tiffin',
+        name: 'Wedding-morning tiffin',
+        pick: [0, 3],
+        note: 'Served before or after the muhurtham',
+        dishes: [
+          v('Medu vadai', 30),
+          v('Rava kesari', 30, true),
+          v('Ven pongal', 35),
+          v('Idli with chutney and sambar', 40),
+        ],
+      },
       {
         id: 'leaf',
         name: 'On the leaf',
-        pick: [4, 6],
+        pick: [4, 7],
         party: true,
         dishes: [
-          v('Sambar'),
-          v('Rasam'),
-          v('Poriyal', undefined, true),
-          v('Kootu', undefined, true),
-          v('Medu vadai'),
-          v('Appalam', undefined, true),
-          v('Pachadi', undefined, true),
+          v('Appalam', 5, true),
+          v('Pickle', 5, true),
+          v('Banana chips', 10, true),
+          v('Pachadi', 20, true),
+          v('Kosambari', 20, true),
+          v('Poriyal', 25, true),
+          v('Kootu', 25, true),
+          v('Medu vadai', 30),
+        ],
+      },
+      {
+        id: 'payasam',
+        name: 'Payasam & sweet',
+        pick: [1, 2],
+        note: 'Served in the middle of the meal',
+        party: true,
+        dishes: [
+          v('Semiya payasam', 30, true),
+          v('Jangiri', 30, true),
+          v('Paruppu payasam', 35, true),
+          v('Sakkarai pongal', 35, true),
+          v('Paal payasam', 40, true),
         ],
       },
       {
         id: 'rice',
-        name: 'Rice',
-        pick: [2, 2],
+        name: 'Rice courses, in order',
+        pick: [3, 5],
         dishes: [
-          v('Plain rice with ghee', undefined, true),
-          v('Curd rice', undefined, true),
-          v('Lemon rice', undefined, true),
+          v('Rice with paruppu and ghee', 30, true),
+          v('Sambar', 25),
+          v('Vatha kuzhambu or mor kuzhambu', 25, true),
+          v('Rasam', 15, true),
+          v('Curd rice with moru', 20, true),
         ],
       },
       {
-        id: 'desserts',
-        name: 'Sweets',
-        pick: [2, 2],
-        party: true,
-        dishes: [
-          v('Payasam', 'payasam', true),
-          v('Rava kesari', undefined, true),
-          v('Sakkarai pongal', undefined, true),
-          v('Jangiri', undefined, true),
-        ],
+        id: 'reception-dinner',
+        name: 'Reception dinner',
+        pick: [0, 2],
+        note: 'At the reception, for families who serve non-vegetarian food',
+        dishes: [nv('Chettinad chicken', 170), nv('Chicken biryani', 180), nv('Mutton chukka', 250)],
       },
       {
-        id: 'drinks',
+        id: 'finish',
         name: 'To finish',
         pick: [1, 2],
         party: true,
-        dishes: [
-          v('Filter coffee', 'filterCoffee', true),
-          v('Rose milk', undefined, true),
-          v('Paan', undefined, true),
-        ],
+        dishes: [v('Banana', 10, true), v('Beeda (paan)', 20, true), v('Filter coffee', 25, true)],
+      },
+      {
+        id: 'drinks',
+        name: 'Drinks',
+        pick: [0, 1],
+        party: true,
+        dishes: [v('Nannari sarbath', 25, true), v('Rose milk', 30, true), MOCKTAILS()],
       },
     ],
     ceremonies: [
+      mehendi('A newer addition to many Tamil weddings.'),
+      {
+        id: 'nichayathartham',
+        name: 'Nichayathartham',
+        when: 'Often the evening before the wedding',
+        about:
+          'The formal engagement: the families exchange thamboolam trays and the wedding invitation (lagna patrikai) is read out.',
+        palette: [KUMKUM, GOLD, JASMINE],
+        decor: [
+          'Brass thamboolam trays with fruit, betel leaves and flowers',
+          'A kolam at the entrance',
+          'Jasmine and marigold strings',
+        ],
+        food: 'Dinner — often the reception dinner the same evening.',
+      },
+      reception(
+        'Reception',
+        'Usually the evening before the muhurtham; guests greet the couple and stay for dinner.',
+      ),
+      {
+        id: 'kashi-yatra',
+        name: 'Kashi Yatra & Oonjal',
+        when: 'Morning of the wedding',
+        about:
+          'The groom sets off for Kashi with an umbrella and fan until the bride’s father persuades him to marry; then the couple sits on a swing (oonjal) while women sing.',
+        palette: [KUMKUM, GOLD, LEAF],
+        decor: [
+          'A decorated wooden oonjal (swing)',
+          'A silk umbrella, hand fan and walking stick for the groom',
+          'Coloured rice balls and lamps for the oonjal ritual',
+        ],
+        food: 'The wedding-morning tiffin.',
+      },
+      {
+        id: 'muhurtham',
+        name: 'Muhurtham',
+        when: 'Early morning, at the muhurtham',
+        about:
+          'Kanyadanam, then the groom ties the thali at the auspicious moment to the sound of the nadaswaram, followed by the saptapadi.',
+        palette: [KUMKUM, GOLD, JASMINE],
+        decor: [
+          'A manavarai (stage) with banana trees and sugarcane',
+          'Jasmine and rose garlands around brass kuthuvilakku lamps',
+          'Kolam and a mango-leaf thoranam',
+        ],
+        food: 'The kalyana saapadu on banana leaves — see the menu.',
+      },
       {
         id: 'nalangu',
         name: 'Nalangu',
-        when: 'The day before',
-        about: 'A playful ritual of turmeric, sandal and games between the families.',
+        when: 'The day before or after the muhurtham',
+        about: 'A playful ritual of turmeric, sandal and games between the couple and families.',
         palette: [TURMERIC, MARIGOLD, LEAF],
         decor: [
           'Jasmine strings and banana-leaf accents',
           'Brass kuthuvilakku lamps',
-          'Kolam at the entrance',
+          'A kolam and a low seat for the couple',
         ],
         food: 'Snacks and filter coffee.',
-        photo: 'haldi',
       },
-      mehendi('A newer addition to many Tamil weddings.'),
-      {
-        id: 'wedding',
-        name: 'Muhurtham',
-        when: 'Early morning muhurtham',
-        about: 'Kanyadaanam and mangalya dharanam (tying the thali) under a decorated mandapam.',
-        palette: [GOLD, VERMILION, LEAF],
-        decor: [
-          'A mandapam with banana trees and mango-leaf thoranams',
-          'Jasmine and rose garlands',
-          'Brass lamps and kolam',
-        ],
-        food: 'The wedding feast on banana leaves — see the menu.',
-        photo: 'tamilWedding',
-      },
-      reception(),
     ],
-    defaultCeremonies: ['nalangu', 'wedding', 'reception'],
+    defaultCeremonies: ['nichayathartham', 'reception', 'kashi-yatra', 'muhurtham'],
   },
 
   kerala: {
     id: 'kerala',
-    label: 'Kerala (Malayali)',
+    label: 'Kerala (Hindu)',
     service:
-      'The wedding sadya is served on a banana leaf to seated guests in a fixed order. Christian and Muslim weddings serve biryani, appam and meat dishes instead.',
+      'The sadya is served on a banana leaf to seated guests in a fixed order: chips, pickles and curries on the leaf first, then rice with parippu and ghee, sambar, the payasams, and finally rasam and moru. Reception dinners often add biryani or meat dishes.',
     courses: [
       {
-        id: 'sadya',
-        name: 'Sadya on the leaf',
-        pick: [5, 7],
+        id: 'leaf',
+        name: 'On the leaf (sadya)',
+        pick: [6, 10],
         party: true,
         dishes: [
-          v('Avial', 'avial', true),
-          v('Olan', undefined, true),
-          v('Thoran'),
-          v('Kalan'),
-          v('Pachadi', undefined, true),
-          v('Parippu with ghee', undefined, true),
-          v('Sambar'),
-          v('Rasam'),
-          v('Pappadam', undefined, true),
-          v('Banana chips and sharkara varatti'),
+          v('Pappadam', 5, true),
+          v('Upperi (banana chips)', 10, true),
+          v('Pickles (manga, naranga)', 10, true),
+          v('Inji puli', 10, true),
+          v('Sharkara varatti', 15, true),
+          v('Kichadi', 20, true),
+          v('Pachadi', 20, true),
+          v('Thoran', 25, true),
+          v('Olan', 30),
+          v('Kalan', 30),
+          v('Erissery', 30),
+          must(v('Avial', 35)),
+          v('Koottu curry', 35),
         ],
       },
       {
-        id: 'nonveg',
-        name: 'For Christian or Muslim weddings',
-        pick: [0, 2],
-        dishes: [nv('Malabar chicken biryani', 'biryani'), nv('Appam with chicken stew'), nv('Fish moilee')],
+        id: 'rice',
+        name: 'Rice and curries, in order',
+        pick: [2, 4],
+        dishes: [
+          v('Rice with parippu and ghee', 30, true),
+          v('Sambar', 25),
+          v('Rasam', 15, true),
+          v('Moru (buttermilk)', 15, true),
+        ],
       },
       {
-        id: 'desserts',
+        id: 'payasam',
         name: 'Payasam',
         pick: [1, 2],
         party: true,
         dishes: [
-          v('Ada pradhaman', undefined, true),
-          v('Palada payasam', 'payasam', true),
-          v('Pazham (banana)', undefined, true),
+          v('Parippu payasam', 40, true),
+          must(v('Ada pradhaman', 45, true)),
+          v('Palada payasam', 45, true),
+        ],
+      },
+      {
+        id: 'reception-dinner',
+        name: 'Reception dinner',
+        pick: [0, 3],
+        note: 'At the reception only',
+        dishes: [
+          v('Vegetable biryani', 100),
+          nv('Appam with chicken stew', 140),
+          nv('Malabar chicken biryani', 180),
+          nv('Fish moilee', 200),
+          nv('Karimeen pollichathu', 280),
         ],
       },
       {
         id: 'drinks',
         name: 'Drinks',
-        pick: [1, 1],
+        pick: [0, 1],
         party: true,
-        dishes: [v('Sambharam (spiced buttermilk)'), v('Mocktail counter', 'mocktails', true)],
+        dishes: [v('Sambharam (spiced buttermilk)', 15, true), MOCKTAILS()],
       },
     ],
     ceremonies: [
-      haldi('Haldi (modern addition)'),
+      engagement(
+        'Nischayam',
+        'The elders fix the match and the date; rings are often exchanged.',
+        'nischayam',
+      ),
       mehendi('A newer addition to many Kerala weddings.'),
       {
-        id: 'wedding',
-        name: 'Wedding (Thaali kettu)',
-        when: 'Morning muhurtham',
-        about: 'A short ceremony where the groom ties the thaali; simple, elegant and on time.',
-        palette: [IVORY, GOLD, LEAF],
+        id: 'vivaham',
+        name: 'Vivaham (Thalikettu)',
+        when: 'Morning, at a short muhurtham — often at a temple',
+        about:
+          'The groom ties the thali, gives the pudava (sari) and the couple circles the nilavilakku lamp; the ceremony takes only minutes.',
+        palette: [{ name: 'Kasavu gold', hex: '#c8a24a' }, { name: 'Off-white', hex: '#f4efe1' }, LEAF],
         decor: [
-          'Kasavu-inspired white and gold drapes',
-          'Nilavilakku (brass lamps) and jasmine',
-          'Coconut-palm and banana-leaf accents',
+          'A mandapam with coconut-frond (kuruthola) work and banana plants',
+          'Brass nilavilakku lamps and a nirapara (paddy-filled measure)',
+          'Jasmine strings in a kasavu white-and-gold palette',
         ],
         food: 'The sadya — see the menu.',
-        photo: 'sadya',
       },
       reception(),
     ],
-    defaultCeremonies: ['wedding', 'reception'],
+    defaultCeremonies: ['nischayam', 'vivaham', 'reception'],
   },
 
   telugu: {
     id: 'telugu',
     label: 'Telugu',
     service:
-      'The wedding feast is served on banana leaves to seated guests; Hyderabadi biryani features at many receptions.',
+      'Served on banana leaves to seated guests: a sweet and pulihora first, then rice with pappu and ghee, curries, pachadi, sambar or pulusu, charu and curd. Hyderabadi biryani features at many receptions.',
     courses: [
       {
         id: 'leaf',
         name: 'On the leaf',
-        pick: [4, 5],
+        pick: [3, 5],
         party: true,
         dishes: [
-          v('Pulihora', 'pulihora', true),
-          v('Gutti vankaya curry', 'guttiVankaya'),
-          v('Mudda pappu with ghee', undefined, true),
-          v('Gongura pachadi'),
-          v('Sambar'),
-          v('Perugu (curd)', undefined, true),
+          v('Appadalu', 5, true),
+          v('Avakaya (mango pickle)', 10, true),
+          v('Gongura pachadi', 15),
+          must(v('Pulihora', 25)),
+          v('Dondakaya fry', 25),
+          v('Mamidikaya pappu', 30),
+          v('Gutti vankaya curry', 40),
         ],
       },
       {
-        id: 'nonveg',
-        name: 'Non-vegetarian',
-        pick: [0, 2],
-        dishes: [nv('Hyderabadi biryani', 'biryani'), nv('Gongura mutton'), nv('Chicken 65')],
+        id: 'rice',
+        name: 'Rice courses, in order',
+        pick: [3, 4],
+        dishes: [
+          v('Rice with mudda pappu and ghee', 30, true),
+          v('Sambar or pappu charu', 25),
+          v('Charu (rasam)', 15, true),
+          v('Perugu (curd)', 15, true),
+        ],
       },
       {
-        id: 'desserts',
+        id: 'sweets',
         name: 'Sweets',
-        pick: [2, 2],
+        pick: [1, 2],
         party: true,
         dishes: [
-          v('Bobbatlu', 'puranPoli', true),
-          v('Double ka meetha', 'doubleKaMeetha', true),
-          v('Qubani ka meetha', undefined, true),
-          v('Payasam', 'payasam', true),
+          v('Payasam', 35, true),
+          v('Bobbatlu', 35, true),
+          v('Poornalu', 35, true),
+          v('Pootharekulu', 40, true),
+          v('Double ka meetha', 50),
+          v('Qubani ka meetha', 70, true),
+        ],
+      },
+      {
+        id: 'reception-dinner',
+        name: 'Reception dinner',
+        pick: [0, 3],
+        note: 'At the reception only',
+        dishes: [
+          v('Mirchi ka salan', 30),
+          v('Veg dum biryani', 110),
+          nv('Chicken 65', 150),
+          nv('Hyderabadi dum biryani', 220),
+          nv('Gongura mutton', 260),
         ],
       },
       {
         id: 'drinks',
         name: 'Drinks',
-        pick: [1, 1],
+        pick: [0, 1],
         party: true,
-        dishes: [v('Majjiga (buttermilk)'), v('Mocktail counter', 'mocktails', true)],
+        dishes: [v('Majjiga (buttermilk)', 15, true), MOCKTAILS()],
       },
     ],
     ceremonies: [
-      haldi('Pellikuthuru / Pellikoduku (haldi)'),
-      mehendi(),
+      engagement(
+        'Nischitartham',
+        'The engagement: the families exchange gifts and fix the muhurtham.',
+        'nischitartham',
+      ),
+      haldi(
+        'Pellikuthuru',
+        'The bride is bathed with turmeric and dressed as a bride for the first time; elders bless her.',
+        'pellikuthuru',
+        'A day or two before the wedding',
+      ),
+      haldi(
+        'Pellikoduku',
+        'The same turmeric ritual for the groom at his home.',
+        'pellikoduku',
+        'A day or two before the wedding',
+      ),
       {
-        id: 'wedding',
-        name: 'Pelli',
-        when: 'At the muhurtham',
+        id: 'pelli',
+        name: 'Pelli (wedding)',
+        when: 'At the muhurtham — often night or early morning',
         about:
-          'Jeelakarra-bellam is placed on each other’s heads, followed by talambralu (showering of rice).',
-        palette: [VERMILION, GOLD, LEAF],
+          'At the muhurtham the couple place jeelakarra bellam (cumin and jaggery) on each other’s heads, then mangalya dharanam and talambralu — showering each other with turmeric rice.',
+        palette: [KUMKUM, GOLD, LEAF],
         decor: [
-          'A mandapam with banana trees and flowers',
-          'Brass lamps',
-          'Rice and turmeric for talambralu',
+          'A pelli mandapam with banana plants and a coconut-leaf thoranam',
+          'A curtain (tera) held between the couple until the muhurtham',
+          'Brass lamps and baskets of talambralu rice',
         ],
-        food: 'The wedding feast — see the menu.',
-        photo: 'mandap',
+        food: 'The wedding meal on banana leaves — see the menu.',
       },
       reception(),
+      mehendi('A newer addition to many Telugu weddings.'),
     ],
-    defaultCeremonies: ['haldi', 'wedding', 'reception'],
+    defaultCeremonies: ['nischitartham', 'pellikuthuru', 'pellikoduku', 'pelli', 'reception'],
   },
 
   muslim: {
     id: 'muslim',
     label: 'Muslim',
-    service: 'A dastarkhwan (seated, shared platters) or buffet; the menu centres on biryani and kebabs.',
+    service:
+      'Served on a dastarkhwan (seated, shared platters) or as a buffet. Biryani and kebabs are the heart of the menu; the walima feast is hosted by the groom’s family.',
     courses: [
       {
         id: 'starters',
@@ -964,37 +1283,47 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         pick: [2, 3],
         party: true,
         dishes: [
-          nv('Seekh kebab', 'seekhKebab'),
-          nv('Galouti kebab'),
-          nv('Chicken tikka'),
-          nv('Haleem (seasonal)', 'haleem'),
-          v('Paneer tikka', 'paneerTikka'),
+          v('Dahi ke kebab', 90),
+          v('Paneer tikka', 110),
+          nv('Shami kebab', 130),
+          nv('Chicken tikka', 150),
+          nv('Seekh kebab', 150),
+          nv('Galouti kebab', 180),
         ],
       },
       {
         id: 'mains',
-        name: 'Mains',
-        pick: [2, 3],
+        name: 'Biryani & mains',
+        pick: [2, 4],
         party: true,
         dishes: [
-          nv('Biryani (Lucknowi, Hyderabadi or Kolkata style)', 'biryani'),
-          nv('Mutton korma', 'korma'),
-          nv('Nihari'),
-          v('Paneer korma'),
-          v('Veg biryani'),
+          v('Dalcha', 50),
+          v('Veg biryani', 110),
+          v('Paneer korma', 120),
+          nv('Chicken biryani', 180),
+          nv('Haleem (seasonal)', 200),
+          nv('Mutton korma', 250),
+          nv('Mutton biryani (Lucknowi, Hyderabadi or Kolkata style)', 260),
+          nv('Nihari', 260),
         ],
       },
-      { id: 'breads', name: 'Breads', pick: [1, 2], dishes: [v('Sheermal'), v('Roomali roti'), v('Naan')] },
+      {
+        id: 'breads',
+        name: 'Breads',
+        pick: [1, 2],
+        dishes: [v('Roomali roti', 25), v('Naan', 30), v('Sheermal', 35), v('Taftan', 40)],
+      },
       {
         id: 'desserts',
         name: 'Desserts',
         pick: [1, 2],
         party: true,
         dishes: [
-          v('Shahi tukda', 'shahiTukda'),
-          v('Phirni', 'phirni', true),
-          v('Qubani ka meetha', undefined, true),
-          v('Double ka meetha', 'doubleKaMeetha'),
+          v('Zarda', 40),
+          v('Phirni in kulhad', 45),
+          v('Double ka meetha', 50),
+          must(v('Shahi tukda', 55)),
+          v('Qubani ka meetha', 70),
         ],
       },
       {
@@ -1002,88 +1331,145 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         name: 'Drinks',
         pick: [1, 2],
         party: true,
-        dishes: [v('Rooh Afza sherbet', 'roohAfza', true), v('Mocktail counter', 'mocktails', true)],
+        dishes: [v('Rooh Afza sherbet', 25), v('Kahwa', 40), MOCKTAILS()],
       },
     ],
     ceremonies: [
-      haldi('Manjha / Haldi'),
+      engagement('Mangni', 'The engagement: rings and gifts are exchanged and the date is fixed.', 'mangni'),
+      {
+        ...haldi(
+          'Manjha (ubtan)',
+          'Ubtan of turmeric and sandalwood is applied to the bride, who wears yellow, a few days before the nikah.',
+          'manjha',
+          'A few days before the nikah',
+        ),
+        palette: [TURMERIC, EMERALD, MARIGOLD],
+      },
       mehendi(),
       {
         id: 'nikah',
         name: 'Nikah',
-        when: 'Day or evening',
-        about: 'The marriage contract is read and accepted in the presence of witnesses and the qazi.',
-        palette: [IVORY, { name: 'Emerald', hex: '#2e7d5b' }, GOLD],
+        when: 'Often after the Asr or Maghrib prayer',
+        about:
+          'The qazi conducts the nikah: ijab-o-qubool, signing the nikahnama and agreeing the mehr, followed by the khutba and dua.',
+        palette: [EMERALD, IVORY, GOLD],
         decor: [
-          'A floral stage with sheer white drapes',
-          'Jasmine and rose garlands',
-          'Separate seating as the family prefers',
+          'A floral partition of jasmine and roses',
+          'A low takht with bolsters for the couple',
+          'Ivory, green and gold drapes with lanterns',
         ],
-        food: 'Dates and sherbet after the nikah, then dinner — see the menu.',
-        photo: 'nikah',
+        food: 'Dinner after the nikah, and dates and sweets as it ends.',
       },
-      reception('Walima', 'The reception hosted by the groom’s family after the nikah.'),
+      reception(
+        'Walima',
+        'The groom’s family hosts a feast after the nikah to celebrate the marriage.',
+        'walima',
+      ),
     ],
-    defaultCeremonies: ['mehendi', 'nikah', 'reception'],
+    defaultCeremonies: ['manjha', 'mehendi', 'nikah', 'walima'],
   },
 
   christian: {
     id: 'christian',
     label: 'Christian',
-    service: 'A buffet reception after the church service; the menu reflects the family’s region.',
+    service:
+      'A buffet reception after the church service, with a toast, cake cutting and the first dance. The menu follows the family’s region — Goan, Mangalorean, Kerala Syrian or Anglo-Indian.',
     courses: [
       {
         id: 'starters',
         name: 'Starters',
         pick: [2, 3],
         party: true,
-        dishes: [nv('Chicken cutlets'), v('Vegetable cutlets'), nv('Fish fingers')],
+        dishes: [
+          v('Vegetable cutlets', 40),
+          nv('Chicken cutlets', 70),
+          nv('Chicken drumsticks', 110),
+          nv('Fish fingers', 120),
+          nv('Prawn rissoles (Goan)', 140),
+        ],
       },
       {
         id: 'mains',
         name: 'Mains',
-        pick: [2, 3],
+        pick: [2, 4],
         party: true,
+        note: 'Pick the dishes of your family’s region',
         dishes: [
-          nv('Chicken roast'),
-          nv('Appam with mutton stew'),
-          v('Vegetable stew with appam'),
-          v('Fried rice or pulao'),
+          v('Vegetable stew with appam', 70),
+          v('Mushroom xacuti', 90),
+          nv('Chicken roast', 160),
+          nv('Chicken xacuti (Goan)', 170),
+          nv('Fish moilee (Kerala)', 200),
+          nv('Appam with mutton stew (Kerala)', 200),
+          nv('Pork sorpotel with sannas (Goan)', 220),
+          nv('Pork vindaloo (Goan)', 220),
+          nv('Duck roast (Kerala)', 260),
         ],
+      },
+      {
+        id: 'rice',
+        name: 'Rice',
+        pick: [1, 1],
+        dishes: [v('Fried rice', 40), v('Ghee rice', 40), v('Pulao', 45)],
       },
       {
         id: 'desserts',
         name: 'Desserts',
-        pick: [2, 2],
+        pick: [1, 2],
         party: true,
-        dishes: [v('Wedding cake'), v('Caramel custard'), v('Plum cake')],
+        note: 'Besides the wedding cake',
+        dishes: [
+          v('Plum cake', 35),
+          v('Bread pudding', 35),
+          v('Caramel custard', 40),
+          v('Bebinca (Goan)', 60),
+        ],
       },
       {
         id: 'drinks',
         name: 'Drinks',
         pick: [1, 2],
         party: true,
-        dishes: [v('Mocktail counter', 'mocktails', true), v('Fresh lime soda', undefined, true)],
+        dishes: [v('Fresh lime soda', 30), MOCKTAILS(), v('A toast with wine or sparkling juice', 100)],
       },
     ],
     ceremonies: [
+      engagement('Engagement', 'Rings are exchanged and blessed, often after a prayer service.'),
       {
-        id: 'wedding',
+        id: 'roce',
+        name: 'Roce',
+        when: 'The day before the wedding',
+        about:
+          'In Goan and Mangalorean Catholic families, coconut milk and oil are applied to the bride or groom while the family sings traditional songs.',
+        palette: [IVORY, LEAF, MARIGOLD],
+        decor: [
+          'Coconut shells and a brass bowl of coconut milk',
+          'Banana leaves and fresh flowers',
+          'Seating for the singers and family',
+        ],
+        food: 'Snacks, sweets and a family dinner.',
+      },
+      {
+        id: 'church',
         name: 'Church wedding',
         when: 'Usually morning or afternoon',
-        about: 'Vows and the exchange of rings in church, followed by the reception.',
-        palette: [WHITE, IVORY, { name: 'Sage', hex: '#8fa98a' }],
+        about:
+          'Vows, rings and the nuptial blessing during the wedding service; the bride often walks down the aisle with her father.',
+        palette: [WHITE, IVORY, { name: 'Lilac', hex: '#b8a1d9' }],
         decor: [
-          'White floral pew-ends and an aisle runner',
-          'Lilies and baby’s breath',
-          'Candle arrangements at the altar',
+          'Pew-end flower arrangements along the aisle',
+          'An altar arrangement in white roses and lilies',
+          'A floral arch at the church entrance',
         ],
-        food: 'Served at the reception — see the menu.',
+        food: 'Refreshments after the service, then the reception.',
         photo: 'churchWedding',
       },
-      reception(),
+      reception(
+        'Reception',
+        'A grand entry, toast, cake cutting and first dance, followed by dinner and music.',
+      ),
     ],
-    defaultCeremonies: ['wedding', 'reception'],
+    defaultCeremonies: ['church', 'reception'],
   },
 
   modern: {
@@ -1094,45 +1480,62 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
       {
         id: 'starters',
         name: 'Starters',
-        pick: [3, 4],
+        pick: [2, 4],
         party: true,
         dishes: [
-          v('Paneer tikka', 'paneerTikka'),
-          v('Chaat counter', 'papdiChaat'),
-          v('Hara bhara kebab'),
-          nv('Chicken tikka'),
-          nv('Amritsari fish', 'amritsariFish'),
+          v('Chaat counter', 60),
+          v('Hara bhara kebab', 70),
+          v('Mini sliders', 100),
+          v('Paneer tikka', 110),
+          nv('Chicken tikka', 150),
+          nv('Amritsari fish', 180),
         ],
       },
       {
         id: 'mains',
         name: 'Mains',
-        pick: [3, 4],
+        pick: [2, 4],
         party: true,
         dishes: [
-          v('Dal makhani', 'dalMakhani'),
-          v('Paneer butter masala'),
-          nv('Butter chicken', 'butterChicken'),
-          v('Mixed vegetable'),
-          nv('Chicken biryani', 'biryani'),
+          v('Mixed vegetable', 50),
+          v('Dal makhani', 70),
+          v('Paneer butter masala', 110),
+          v('Live pasta counter', 120),
+          nv('Butter chicken', 170),
+          nv('Chicken biryani', 180),
         ],
       },
       {
         id: 'breads',
         name: 'Breads & rice',
-        pick: [2, 2],
-        dishes: [v('Butter naan'), v('Lachha paratha'), v('Jeera rice', undefined, true)],
+        pick: [1, 2],
+        party: true,
+        dishes: [v('Butter naan', 30), v('Jeera rice', 35), v('Lachha paratha', 35)],
+      },
+      {
+        id: 'cake',
+        name: 'Birthday cake',
+        pick: [1, 1],
+        party: true,
+        onlyFor: ['birthday'],
+        dishes: [
+          v('Eggless pineapple cake', 45),
+          v('Chocolate truffle cake', 60),
+          v('Fresh fruit cake', 60),
+          v('Designer theme cake', 120),
+        ],
       },
       {
         id: 'desserts',
         name: 'Desserts',
-        pick: [2, 3],
+        pick: [1, 3],
         party: true,
         dishes: [
-          v('Gulab jamun', 'gulabJamun', true),
-          v('Rasmalai', undefined, true),
-          v('Ice-cream counter', undefined, true),
-          v('Jalebi with rabri', 'rabri', true),
+          v('Gulab jamun', 35),
+          v('Rasmalai', 50),
+          v('Ice-cream counter', 60),
+          v('Jalebi with rabri', 60),
+          v('Brownie with ice cream', 70),
         ],
       },
       {
@@ -1140,26 +1543,23 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
         name: 'Drinks',
         pick: [1, 2],
         party: true,
-        dishes: [v('Mocktail counter', 'mocktails', true), v('Lassi', 'lassi', true)],
+        dishes: [v('Lassi', 40), v('Cold coffee', 60), MOCKTAILS()],
       },
     ],
     ceremonies: [
+      engagement('Engagement', 'Rings are exchanged in front of both families.'),
       mehendi(),
-      haldi(),
+      haldi('Haldi', 'Turmeric paste is applied to the bride and groom for blessings and glow.'),
       sangeet(),
       {
         id: 'wedding',
         name: 'Wedding',
-        when: 'Evening',
-        about: 'The main ceremony — pheras, vows or the family’s own rituals.',
-        palette: [VERMILION, GOLD, BLUSH],
-        decor: [
-          'A mandap or stage with fresh flowers',
-          'An aisle of marigold and roses',
-          'Warm lighting and candles',
-        ],
-        food: 'The wedding dinner — see the menu.',
-        photo: 'pheras',
+        when: 'At the muhurat',
+        about: 'Varmala, pheras and vows in a decorated mandap or on a stage.',
+        palette: [RANI, GOLD, IVORY],
+        decor: ['A floral mandap', 'A rose-petal aisle', 'Warm lights and drapes'],
+        food: 'The wedding feast — see the menu.',
+        photo: 'mandap',
       },
       reception(),
     ],
@@ -1167,13 +1567,13 @@ export const TRADITION_DATA: Record<TraditionId, Tradition> = {
   },
 };
 
-/** The single "ceremony" for non-wedding events, so decor works the same way. */
-export const PARTY_CEREMONIES: Record<'birthday' | 'community', Ceremony> = {
+/** The single "ceremony" for non-wedding events, so décor works the same way. */
+export const PARTY_CEREMONIES: Record<'birthday' | 'community' | 'corporate', Ceremony> = {
   birthday: {
     id: 'party',
     name: 'The party',
     when: 'On the day',
-    about: 'Decor, games and a cake moment planned around the birthday person.',
+    about: 'Décor, games and a cake moment planned around the birthday person.',
     palette: [{ name: 'Party pink', hex: '#ec4899' }, { name: 'Sky blue', hex: '#38bdf8' }, MARIGOLD],
     decor: [
       'A balloon arch in two theme colours',
@@ -1195,6 +1595,22 @@ export const PARTY_CEREMONIES: Record<'birthday' | 'community', Ceremony> = {
       'A stage with sound and lighting',
     ],
     food: 'See the menu.',
-    photo: 'pandal',
+  },
+  corporate: {
+    id: 'event',
+    name: 'The event',
+    when: 'On the day',
+    about: 'A clear agenda, good sound and a branded backdrop, with space to network.',
+    palette: [
+      { name: 'Navy', hex: '#1e3a5f' },
+      { name: 'Slate grey', hex: '#64748b' },
+      { name: 'Brand accent', hex: '#0ea5e9' },
+    ],
+    decor: [
+      'A branded stage backdrop and standees at the entrance',
+      'Clear signage for registration, halls and washrooms',
+      'Simple centrepieces in brand colours',
+    ],
+    food: 'See the menu.',
   },
 };

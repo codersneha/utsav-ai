@@ -74,6 +74,9 @@ export function describeChanges(before: EventPlan, after: EventPlan, today: stri
   }
 
   if (a.city !== b.city) lines.push(`City changed to ${b.city}: vendor search links were updated.`);
+  if (a.venuePreference !== b.venuePreference && b.venuePreference) {
+    lines.push(`Venue preference: ${b.venuePreference}.`);
+  }
   if (a.venueName !== b.venueName) {
     lines.push(b.venueName ? `Venue set to ${b.venueName}.` : 'Venue cleared.');
   }

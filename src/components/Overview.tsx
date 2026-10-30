@@ -9,6 +9,7 @@ import {
   PartyPopper,
   PieChart,
   Share2,
+  Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import { checklistProgress } from '../lib/checklist';
@@ -16,7 +17,8 @@ import { daysBetween } from '../lib/dates';
 import { formatCompactInr, formatInr } from '../lib/plan';
 import { familyUpdate, shareUrl, whatsappUrl } from '../lib/share';
 import { tasksNeedingAttention, timelineProgress } from '../lib/timeline';
-import type { EventPlan, Ideas, VendorEntry } from '../types';
+import { nextSteps } from '../lib/nextSteps';
+import type { EventPlan, GuestEntry, Ideas, VendorEntry } from '../types';
 import { CHART_COLORS, Donut, Ring } from './Charts';
 
 interface Props {
@@ -26,8 +28,18 @@ interface Props {
   timelineDone: Record<string, boolean>;
   checklistDone: Record<string, boolean>;
   vendors: VendorEntry[];
+  guests: GuestEntry[];
   onNavigate: (tab: string) => void;
 }
+
+const STEP_ACTIONS: Record<string, string> = {
+  timeline: 'Open timeline',
+  budget: 'Open budget',
+  ideas: 'Open menu',
+  vendors: 'Open vendors',
+  guests: 'Open guests',
+  whatif: 'Plan B',
+};
 
 const shortDate = (iso: string) => {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -38,7 +50,16 @@ const shortDate = (iso: string) => {
 };
 
 /** The at-a-glance dashboard: budget, progress, what's next and sharing. */
-export function Overview({ plan, today, ideas, timelineDone, checklistDone, vendors, onNavigate }: Props) {
+export function Overview({
+  plan,
+  today,
+  ideas,
+  timelineDone,
+  checklistDone,
+  vendors,
+  guests,
+  onNavigate,
+}: Props) {
   const { budget, timeline, checklist, details } = plan;
   const [copied, setCopied] = useState('');
 
@@ -46,6 +67,7 @@ export function Overview({ plan, today, ideas, timelineDone, checklistDone, vend
   const vendorPct = checklistProgress(checklist, checklistDone);
   const confirmed = new Set(vendors.filter((v) => v.status === 'confirmed').map((v) => v.groupId)).size;
   const attention = tasksNeedingAttention(timeline, timelineDone, today);
+  const steps = nextSteps({ plan, today, timelineDone, vendors, guests, ideas });
   const upNext = timeline.milestones.filter((m) => !timelineDone[m.id] && m.daysBefore >= 0).slice(0, 4);
 
   const sorted = [...budget.lines].sort((a, b) => b.amount - a.amount);
@@ -72,6 +94,31 @@ export function Overview({ plan, today, ideas, timelineDone, checklistDone, vend
         Overview
       </h3>
       <div className="dashboard">
+        {steps.length > 0 && (
+          <article className="card span-12 next-steps" aria-labelledby="steps-title">
+            <h4 id="steps-title" className="card-title">
+              <span className="icon-badge gold" aria-hidden="true">
+                <Sparkles size={20} />
+              </span>
+              Your next steps
+            </h4>
+            <ol className="next-steps-list">
+              {steps.map((step) => (
+                <li key={step.id} className={step.urgent ? 'urgent' : undefined}>
+                  <span>{step.text}</span>
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => onNavigate(step.tab)}
+                    aria-label={`${STEP_ACTIONS[step.tab]}: ${step.text}`}
+                  >
+                    {STEP_ACTIONS[step.tab]} <ArrowRight size={16} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </article>
+        )}
         <article className="card span-4" aria-labelledby="progress-title">
           <h4 id="progress-title" className="card-title">
             <span className="icon-badge teal" aria-hidden="true">

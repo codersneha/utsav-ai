@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { VenueLookupError, checkVenue, distanceKm, findVenues } from './venues.js';
+import { VenueLookupError, checkVenue, distanceKm, findVenues, searchesFor } from './venues.js';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -81,11 +81,12 @@ describe('findVenues', () => {
     const pause = vi.fn(async () => {});
     const venues = await findVenues('Habra', fetchImpl as unknown as typeof fetch, { pause });
 
+    // Event venues first (nearest first), then the other kinds of place in search order.
     expect(venues.map((v) => v.name)).toEqual([
-      'Banquet Apartments Shop',
       'Royal Aura Banquet',
-      'Shubho Marriage Hall',
       'Mangalik',
+      'Banquet Apartments Shop',
+      'Shubho Marriage Hall',
       'Spandan Hall',
       'Monorama Hotel',
     ]);
@@ -126,5 +127,38 @@ describe('findVenues', () => {
     await expect(
       checkVenue('Hall', 'Kolkata', (async () => json({}, 503)) as unknown as typeof fetch),
     ).rejects.toBeInstanceOf(VenueLookupError);
+  });
+});
+
+describe('searchesFor', () => {
+  it('puts the user’s own words first, then the venue type', () => {
+    expect(searchesFor('restaurant', 'rooftop bar and dine in')).toEqual([
+      'rooftop',
+      'terrace',
+      '[amenity=bar]',
+      '[amenity=pub]',
+      '[amenity=restaurant]',
+      'banquet',
+    ]);
+    expect(searchesFor('cafe', '')[0]).toBe('[amenity=cafe]');
+    expect(searchesFor('banquet', 'garden with a banquet hall').slice(0, 2)).toEqual(['lawn', 'garden']);
+  });
+
+  it('ranks places matching the user’s words first and says why', async () => {
+    const answers = [
+      [{ lat: '22.57', lon: '88.36' }],
+      [{ name: 'Sky Rooftop Lounge', type: 'bar', lat: '22.6', lon: '88.4', osm_type: 'node', osm_id: 1 }],
+      [],
+      [{ name: 'Corner Pub', type: 'bar', lat: '22.571', lon: '88.361', osm_type: 'node', osm_id: 2 }],
+    ];
+    let call = 0;
+    const fetchImpl = (async () => json(answers[call++] ?? [])) as unknown as typeof fetch;
+    const venues = await findVenues('Kolkata', fetchImpl, {
+      venueType: 'restaurant',
+      preference: 'rooftop bar',
+      pause: async () => {},
+    });
+    expect(venues[0].name).toBe('Sky Rooftop Lounge');
+    expect(venues[0].match).toMatch(/roof/);
   });
 });

@@ -32,6 +32,7 @@ const birthday: EventDetails = {
   tradition: 'modern',
   ceremonies: [],
   venueName: '',
+  venuePreference: '',
 };
 
 /** Renders the app with a saved plan and a working (mocked) API. */
@@ -123,38 +124,56 @@ describe('vendors: AI advice and the user’s own records', () => {
   it('shows AI tasks and questions, and tracks vendors, quotes and status', async () => {
     const { user, container } = await openPlan();
     await user.click(screen.getByRole('tab', { name: 'Vendors' }));
-    const caterer = screen.getByRole('article', { name: 'Caterer' });
-    expect(within(caterer).getByLabelText(/Confirm a separate Jain counter/)).toBeInTheDocument();
-    await user.click(within(caterer).getByText(/Questions to ask/));
+    const caterer = screen.getByRole('group', { name: 'Caterer' });
+    expect(caterer).toHaveTextContent('Not started');
+    await user.click(within(caterer).getByText('Caterer'));
+    expect(within(caterer).getByLabelText(/Confirm a separate Jain counter/)).toBeVisible();
     expect(within(caterer).getByText('Is Jain food cooked separately?')).toBeVisible();
 
-    await user.click(within(caterer).getByRole('button', { name: '+ Add caterer' }));
+    await user.click(within(caterer).getByRole('button', { name: /Add caterer/ }));
     await user.click(within(caterer).getByRole('button', { name: 'Save vendor' }));
     expect(within(caterer).getByRole('alert')).toHaveTextContent('Enter the vendor’s name');
     await user.type(within(caterer).getByLabelText('Name'), 'Annapurna Caterers');
     await user.type(within(caterer).getByLabelText('Phone or email'), '98xxxxxx10');
+    await user.type(within(caterer).getByLabelText('Address'), 'Lake Town, Kolkata');
     await user.type(within(caterer).getByLabelText('Quote (₹, optional)'), '999999');
+    await user.type(within(caterer).getByLabelText('Notes'), 'Two tastings included');
     await user.click(within(caterer).getByRole('button', { name: 'Save vendor' }));
 
     expect(within(caterer).getByText('Annapurna Caterers')).toBeInTheDocument();
-    expect(within(caterer).getByText(/over estimate/)).toBeInTheDocument();
+    expect(within(caterer).getByText(/is over the/)).toBeInTheDocument();
+    expect(within(caterer).getByText('Two tastings included')).toBeInTheDocument();
+    expect(within(caterer).getByRole('link', { name: /Lake Town, Kolkata/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('google.com/maps/search'),
+    );
+    expect(caterer).toHaveTextContent('Quotes in');
     const status = within(caterer).getByLabelText('Status of Annapurna Caterers');
     expect(status).toHaveValue('quoted');
     await user.selectOptions(status, 'confirmed');
     expect(status).toHaveValue('confirmed');
+    expect(caterer).toHaveTextContent('Booked');
+
+    await user.click(within(caterer).getByRole('button', { name: 'Edit notes for Annapurna Caterers' }));
+    const notes = within(caterer).getByLabelText('Notes about Annapurna Caterers');
+    await user.clear(notes);
+    await user.type(notes, 'Advance paid');
+    await user.click(within(caterer).getByRole('button', { name: 'Save notes' }));
+    expect(within(caterer).getByText('Advance paid')).toBeInTheDocument();
     expect(await axeViolations(container)).toEqual([]);
 
     await user.click(within(caterer).getByRole('button', { name: 'Remove Annapurna Caterers' }));
-    expect(within(caterer).getByText('None added yet.')).toBeInTheDocument();
+    expect(within(caterer).getByText(/No contacts yet/)).toBeInTheDocument();
   });
 
   it('can cancel adding a vendor', async () => {
     const { user } = await openPlan();
     await user.click(screen.getByRole('tab', { name: 'Vendors' }));
-    const venue = screen.getByRole('article', { name: 'Venue' });
-    await user.click(within(venue).getByRole('button', { name: '+ Add venue' }));
+    const venue = screen.getByRole('group', { name: 'Venue' });
+    await user.click(within(venue).getByText('Venue'));
+    await user.click(within(venue).getByRole('button', { name: /Add venue/ }));
     await user.click(within(venue).getByRole('button', { name: 'Cancel' }));
-    expect(within(venue).getByRole('button', { name: '+ Add venue' })).toBeInTheDocument();
+    expect(within(venue).getByRole('button', { name: /Add venue/ })).toBeInTheDocument();
   });
 });
 

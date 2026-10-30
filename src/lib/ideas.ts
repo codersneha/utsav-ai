@@ -7,6 +7,7 @@ const LABELS: Record<EventType, string> = {
   wedding: 'wedding',
   birthday: 'birthday party',
   community: 'community event',
+  corporate: 'corporate event',
 };
 
 const CEREMONIES_SCHEMA = {
@@ -18,8 +19,9 @@ const CEREMONIES_SCHEMA = {
       theme: { type: 'STRING' },
       palette: { type: 'ARRAY', items: { type: 'STRING' } },
       decor: { type: 'ARRAY', items: { type: 'STRING' } },
+      photoMatches: { type: 'BOOLEAN' },
     },
-    required: ['id', 'theme', 'palette', 'decor'],
+    required: ['id', 'theme', 'palette', 'decor', 'photoMatches'],
   },
 } as const;
 
@@ -71,6 +73,7 @@ function parseCeremonies(value: unknown, details: EventDetails): CeremonyIdea[] 
       theme: cleanText(o.theme, 60),
       palette: cleanList(o.palette, 4, 30),
       decor: cleanList(o.decor, 4, ITEM_MAX),
+      photoMatches: o.photoMatches === true,
     };
     return idea.theme && idea.decor.length > 0 ? idea : null;
   });
@@ -160,6 +163,20 @@ const EXTRAS: Record<EventType, Pick<Ideas, 'activities' | 'budgetTips'>> = {
       'Borrow stage and chairs from the RWA or school',
       'Use free social media promotion',
       'Charge a small stall fee to cover costs',
+    ],
+  },
+  corporate: {
+    activities: [
+      'A short team quiz or trivia round',
+      'Recognition awards with a one-line story for each winner',
+      'A photo wall with the company branding',
+      'An open mic or band performance by colleagues',
+    ],
+    budgetTips: [
+      'Pick a weekday or off-season date for better venue rates',
+      'Choose a venue with in-house AV to avoid rental charges',
+      'Use digital badges and agendas instead of print',
+      'Lock the headcount a week before for accurate catering',
     ],
   },
 };

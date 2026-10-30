@@ -5,9 +5,13 @@ import {
   PHOTOS,
   TRADITION_DATA,
   ceremoniesFor,
+  decorPhoto,
+  decorTier,
   defaultMenu,
   findDish,
+  menuCost,
   menuFor,
+  menuTier,
   validateMenu,
 } from './index.js';
 
@@ -48,7 +52,6 @@ describe('Bengali wedding menu', () => {
       expect.arrayContaining(['Bhetki macher paturi', 'Doi katla', 'Mutton kosha']),
     );
     expect(names('finish')).toEqual(['Mishti paan']);
-    expect(defaultMenu(bengali).find((m) => m.courseId === 'mains')?.dishes).toHaveLength(2);
   });
 
   it('serves no fish or meat at a vegetarian-only wedding', () => {
@@ -110,21 +113,90 @@ describe('validateMenu', () => {
   });
 });
 
-describe('photos', () => {
-  it('come only from Wikimedia Commons (allowed by the CSP) with a licence', () => {
+describe('menus fit the food budget', () => {
+  const at = (budget: number) => ({ ...bengali, guests: 300, budget, priorities: [] });
+  const mains = (budget: number) => defaultMenu(at(budget)).find((m) => m.courseId === 'mains')?.dishes ?? [];
+
+  it('gives a generous budget premium dishes and more variety', () => {
+    expect(mains(2_500_000)).toEqual(
+      expect.arrayContaining(['Mutton kosha', 'Shorshe ilish', 'Chingri macher malai curry']),
+    );
+    expect(mains(1_200_000)).toHaveLength(2);
+    expect(mains(1_200_000)).not.toContain('Shorshe ilish');
+  });
+
+  it('always keeps the must-have dishes', () => {
+    for (const budget of [600_000, 2_500_000]) {
+      const menu = defaultMenu(at(budget));
+      const all = menu.flatMap((m) => m.dishes);
+      expect(all).toEqual(expect.arrayContaining(['Phuchka', 'Fish fry', 'Mishti doi', 'Mishti paan']));
+    }
+  });
+
+  it('stays within the per-plate budget whenever the usual minimum allows', () => {
+    const plan = menuFor(at(1_200_000));
+    expect(menuCost(defaultMenu(at(1_200_000)), plan)).toBeLessThanOrEqual(plan.perPlate);
+    expect(menuTier('wedding', plan.perPlate)).toBe('classic');
+  });
+
+  it('trims an AI menu that overspends', () => {
+    const plan = menuFor(at(1_200_000));
+    const menu = validateMenu(
+      [{ courseId: 'mains', dishes: ['Shorshe ilish', 'Chingri macher malai curry', 'Mutton kosha'] }],
+      at(1_200_000),
+    );
+    expect(menuCost(menu, plan)).toBeLessThanOrEqual(plan.perPlate * 1.05);
+  });
+
+  it('lists dishes in serving order', () => {
+    const tamil = { ...at(2_000_000), tradition: 'tamil' as const, diets: ['vegetarian' as const] };
+    const rice = defaultMenu(tamil).find((m) => m.courseId === 'rice')?.dishes ?? [];
+    expect(rice[0]).toBe('Rice with paruppu and ghee');
+    expect(rice.at(-1)).toBe('Curd rice with moru');
+  });
+
+  it('adds a birthday cake only at birthdays', () => {
+    const party = { ...birthdayDetails, tradition: 'modern' as const };
+    expect(menuFor(party).courses.map((c) => c.id)).toContain('cake');
+    expect(menuFor({ ...party, eventType: 'corporate' }).courses.map((c) => c.id)).not.toContain('cake');
+  });
+});
+
+describe('décor photos', () => {
+  it('come only from Wikimedia Commons (allowed by the CSP) with a licence and description', () => {
     for (const photo of Object.values(PHOTOS)) {
       expect(photo.src).toMatch(/^https:\/\/upload\.wikimedia\.org\//);
       expect(photo.page).toMatch(/^https:\/\/commons\.wikimedia\.org\//);
       expect(photo.license.length).toBeGreaterThan(0);
+      expect(photo.shows.length).toBeGreaterThan(10);
     }
   });
 
-  it('every photo a dish or function names exists', () => {
+  it('are shown only when they fit the budget level', () => {
+    const reception = ceremoniesFor({ ...bengali, ceremonies: ['bou-bhaat'] })[0];
+    expect(decorPhoto(reception, 'simple')).toBeDefined();
+    expect(decorPhoto(reception, 'classic')).toBeUndefined();
+    expect(decorTier({ ...bengali, budget: 25_00_000, guests: 300 })).toBe('classic');
+    expect(decorTier({ ...bengali, budget: 3_00_000, guests: 100 })).toBe('simple');
+  });
+
+  it('every photo a function names exists, and every tradition’s defaults exist', () => {
     for (const t of Object.values(TRADITION_DATA)) {
-      for (const course of t.courses)
-        for (const d of course.dishes) if (d.photo) expect(PHOTOS[d.photo]).toBeDefined();
       for (const c of t.ceremonies) if (c.photo) expect(PHOTOS[c.photo]).toBeDefined();
       expect(t.defaultCeremonies.every((id) => t.ceremonies.some((c) => c.id === id))).toBe(true);
+      for (const course of t.courses) for (const d of course.dishes) expect(d.cost).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('every tradition', () => {
+  it('uses its own names for its functions', () => {
+    const ids = (t: keyof typeof TRADITION_DATA) => TRADITION_DATA[t].ceremonies.map((c) => c.id);
+    expect(ids('punjabi')).toEqual(expect.arrayContaining(['roka', 'jaggo', 'maiyan', 'choora']));
+    expect(ids('marwari')).toEqual(expect.arrayContaining(['tilak', 'pithi', 'mayra', 'nikasi']));
+    expect(ids('tamil')).toEqual(expect.arrayContaining(['nichayathartham', 'kashi-yatra', 'muhurtham']));
+    expect(ids('telugu')).toEqual(expect.arrayContaining(['pellikuthuru', 'pellikoduku', 'pelli']));
+    expect(ids('muslim')).toEqual(expect.arrayContaining(['manjha', 'nikah', 'walima']));
+    expect(ids('kerala')).not.toContain('haldi');
   });
 });

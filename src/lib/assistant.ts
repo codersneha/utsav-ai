@@ -9,11 +9,13 @@ import {
   type Inspiration,
 } from '../types.js';
 import { cleanList, cleanObjects, toObject } from './aiOutput.js';
+import { TRADITIONS } from './culture/traditions.js';
 import { daysBetween, parseIsoDate } from './dates.js';
 import {
   LIMITS,
   cleanText,
   isAgeGroup,
+  isTradition,
   isDiet,
   isEventType,
   isPriority,
@@ -39,6 +41,9 @@ export const EXTRACT_RESPONSE_SCHEMA = {
     diets: { type: 'ARRAY', items: { type: 'STRING', enum: [...DIETS] } },
     ageGroup: { type: 'STRING', enum: [...AGE_GROUPS] },
     colors: { type: 'STRING' },
+    tradition: { type: 'STRING', enum: [...TRADITIONS] },
+    venueName: { type: 'STRING' },
+    venuePreference: { type: 'STRING', description: 'The kind of place wanted, e.g. rooftop with dine-in' },
   },
 } as const;
 
@@ -78,6 +83,11 @@ export function parseExtracted(raw: unknown, today: string): Partial<EventDetail
   if (isAgeGroup(obj.ageGroup) && obj.ageGroup !== 'mixed') out.ageGroup = obj.ageGroup;
   const colors = real(cleanText(obj.colors, LIMITS.colorsMax));
   if (colors) out.colors = colors;
+  if (isTradition(obj.tradition) && obj.tradition !== 'modern') out.tradition = obj.tradition;
+  const venueName = real(cleanText(obj.venueName, LIMITS.venueMax));
+  if (venueName.length >= 2) out.venueName = venueName;
+  const venuePreference = real(cleanText(obj.venuePreference, LIMITS.venueMax));
+  if (venuePreference.length >= 3) out.venuePreference = venuePreference;
 
   return Object.keys(out).length > 0 ? out : null;
 }

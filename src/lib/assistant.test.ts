@@ -88,3 +88,19 @@ describe('photo inspiration', () => {
     expect(parseInspiration({ theme: 'x', palette: [{ name: 'a', hex: 'bad' }] })).toBeNull();
   });
 });
+
+describe('extracting tradition and venue', () => {
+  it('keeps a known tradition and the venue wishes', () => {
+    expect(
+      parseExtracted(
+        { tradition: 'bengali', venueName: 'Rajbari Banquet', venuePreference: 'garden with a banquet hall' },
+        TODAY,
+      ),
+    ).toEqual({
+      tradition: 'bengali',
+      venueName: 'Rajbari Banquet',
+      venuePreference: 'garden with a banquet hall',
+    });
+    expect(parseExtracted({ tradition: 'klingon', venueName: 'unknown' }, TODAY)).toBeNull();
+  });
+});

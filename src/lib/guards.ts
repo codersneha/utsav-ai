@@ -1,5 +1,8 @@
 import {
+  GUEST_SIDES,
+  RSVP_STATUSES,
   VENDOR_STATUSES,
+  type GuestEntry,
   type ChatTurn,
   type CustomTask,
   type Ideas,
@@ -35,9 +38,25 @@ export const isVendorEntry = (v: unknown): v is VendorEntry =>
   isString(v.groupId) &&
   isString(v.name) &&
   isString(v.contact) &&
+  (v.address === undefined || isString(v.address)) &&
+  (v.notes === undefined || isString(v.notes)) &&
   typeof v.quote === 'number' &&
   Number.isFinite(v.quote) &&
   VENDOR_STATUSES.includes(v.status as VendorEntry['status']);
+
+const isCount = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 500;
+
+export const isGuestEntry = (v: unknown): v is GuestEntry =>
+  isObject(v) &&
+  isString(v.id) &&
+  isString(v.name) &&
+  isString(v.relation) &&
+  GUEST_SIDES.includes(v.side as GuestEntry['side']) &&
+  isCount(v.adults) &&
+  isCount(v.children) &&
+  typeof v.vip === 'boolean' &&
+  typeof v.invited === 'boolean' &&
+  RSVP_STATUSES.includes(v.rsvp as GuestEntry['rsvp']);
 
 const isProposal = (v: unknown) =>
   isObject(v) &&
@@ -73,7 +92,8 @@ const isCeremonyIdeas = (v: unknown) =>
       isString(c.ceremonyId) &&
       isString(c.theme) &&
       isStrings(c.palette) &&
-      isStrings(c.decor),
+      isStrings(c.decor) &&
+      (c.photoMatches === undefined || typeof c.photoMatches === 'boolean'),
   );
 
 const isMenu = (v: unknown) =>

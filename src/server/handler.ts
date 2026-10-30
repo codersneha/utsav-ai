@@ -21,7 +21,7 @@ import {
   buildLogisticsPrompt,
   type Refinement,
 } from '../lib/prompts.js';
-import { LIMITS, cleanText, validateEventDetails } from '../lib/validation.js';
+import { LIMITS, cleanText, isVenueType, validateEventDetails } from '../lib/validation.js';
 import type { ChatTurn, EventDetails, IdeasSection } from '../types.js';
 import { DEFAULT_MODEL, GeminiError, generateText, type GeminiRequest } from './gemini.js';
 import { LruCache, RateLimiter } from './rateLimit.js';
@@ -141,7 +141,7 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
       const prompt = buildIdeasPrompt(job.details, job.refinement, job.section);
       const schema = IDEAS_SCHEMAS[job.section ?? 'all'];
       const text = await generateText(
-        { ...base, prompt, responseSchema: schema, maxOutputTokens: 3072 },
+        { ...base, prompt, responseSchema: schema, maxOutputTokens: 8192 },
         fetchImpl,
       );
       const ideas = parseIdeas(text, job.details, job.section);
@@ -161,7 +161,7 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
       const budget = buildBudget(details.eventType, details.budget, details.guests, details.priorities);
       const prompt = buildAskPrompt(details, budget, job.history, job.question, job.today);
       const text = await generateText(
-        { ...base, prompt, responseSchema: ASK_RESPONSE_SCHEMA, temperature: 0.5, maxOutputTokens: 1024 },
+        { ...base, prompt, responseSchema: ASK_RESPONSE_SCHEMA, temperature: 0.5, maxOutputTokens: 2048 },
         fetchImpl,
       );
       const obj = toObject(text);
@@ -187,7 +187,7 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
     case 'extract': {
       const prompt = buildExtractPrompt(job.description, job.today);
       const text = await generateText(
-        { ...base, prompt, responseSchema: EXTRACT_RESPONSE_SCHEMA, temperature: 0.1, maxOutputTokens: 1024 },
+        { ...base, prompt, responseSchema: EXTRACT_RESPONSE_SCHEMA, temperature: 0.1, maxOutputTokens: 2048 },
         fetchImpl,
       );
       const extracted = parseExtracted(text, job.today);
@@ -208,13 +208,17 @@ async function handleVenues(
   if (!action || city.length < 2 || (action === 'check' && name.length < 2)) {
     return json(400, { error: 'Invalid venue request' });
   }
-  const key = `venues:${action}:${city.toLowerCase()}:${name.toLowerCase()}`;
+  const venueType = isVenueType(payload.venueType) ? payload.venueType : 'undecided';
+  const preference = cleanText(payload.preference, LIMITS.venueMax);
+  const key = `venues:${action}:${city.toLowerCase()}:${name.toLowerCase()}:${venueType}:${preference.toLowerCase()}`;
   const cached = cache.get(key);
   if (cached) return json(200, { venues: cached, cached: true });
   const fetchImpl = deps.mapFetch ?? deps.fetchImpl;
   try {
     const venues =
-      action === 'check' ? await checkVenue(name, city, fetchImpl) : await findVenues(city, fetchImpl);
+      action === 'check'
+        ? await checkVenue(name, city, fetchImpl)
+        : await findVenues(city, fetchImpl, { venueType, preference });
     cache.set(key, venues);
     return json(200, { venues });
   } catch (err) {

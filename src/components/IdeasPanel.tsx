@@ -1,6 +1,18 @@
 import { HandPlatter, PartyPopper, PiggyBank, RefreshCw, Sparkles, Utensils, Wand2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { PHOTOS, ceremoniesFor, findDish, menuFor, type Ceremony, type PhotoKey } from '../lib/culture';
+import {
+  MENU_TIER_LABELS,
+  ceremoniesFor,
+  decorPhoto,
+  decorTier,
+  findDish,
+  menuCost,
+  menuFor,
+  type Ceremony,
+  type DecorTier,
+  type Photo as DecorPhoto,
+} from '../lib/culture';
+import { formatInr } from '../lib/plan';
 import { LIMITS } from '../lib/validation';
 import type { EventDetails, Ideas, IdeasSection } from '../types';
 import { InspirationCard } from './InspirationCard';
@@ -15,11 +27,13 @@ interface Props {
   onRefine: (request: string) => void;
   onRefreshSection: (section: IdeasSection, request?: string) => void;
   onUseInspiration: (look: { colors: string; note: string }) => void;
+  /** The planned catering and décor amounts (the user's own figures if edited). */
+  catering?: number;
+  decor?: number;
 }
 
-/** A credited photo from Wikimedia Commons, or a palette swatch when none is curated. */
-function Photo({ photoKey, alt, palette }: { photoKey?: PhotoKey; alt: string; palette: string[] }) {
-  const photo = photoKey ? PHOTOS[photoKey] : undefined;
+/** A credited décor photo from Wikimedia Commons, or the colour palette when no photo fits. */
+function Photo({ photo, alt, palette }: { photo?: DecorPhoto; alt: string; palette: string[] }) {
   if (!photo) {
     return (
       <div
@@ -85,11 +99,21 @@ function SectionRefine({
   );
 }
 
-function CeremonyCard({ ceremony, idea }: { ceremony: Ceremony; idea?: Ideas['ceremonies'][number] }) {
+function CeremonyCard({
+  ceremony,
+  idea,
+  tier,
+}: {
+  ceremony: Ceremony;
+  idea?: Ideas['ceremonies'][number];
+  tier: DecorTier;
+}) {
   const palette = ceremony.palette.map((p) => p.hex);
+  // Show a photo only when it fits the budget level and (for AI ideas) the AI says it matches.
+  const photo = idea?.photoMatches === false ? undefined : decorPhoto(ceremony, tier);
   return (
     <li className="ceremony-card card">
-      <Photo photoKey={ceremony.photo} alt={`${ceremony.name} décor`} palette={palette} />
+      <Photo photo={photo} alt={`${ceremony.name} décor`} palette={palette} />
       <div className="ceremony-body">
         <p className="eyebrow">
           {ceremony.name} · {ceremony.when}
@@ -119,20 +143,35 @@ function CeremonyCard({ ceremony, idea }: { ceremony: Ceremony; idea?: Ideas['ce
   );
 }
 
-function MenuCard({ details, ideas }: { details: EventDetails; ideas: Ideas }) {
-  const plan = menuFor(details);
+function MenuCard({ details, ideas, catering }: { details: EventDetails; ideas: Ideas; catering?: number }) {
+  const plan = menuFor(details, catering);
   const chosen = new Map(ideas.menu.map((m) => [m.courseId, m.dishes]));
   const courses = plan.courses.filter((c) => (chosen.get(c.id) ?? []).length > 0);
-  const credits = courses.flatMap((c) =>
-    (chosen.get(c.id) ?? []).flatMap((name) => {
-      const key = findDish(c.id, name, details)?.photo;
-      return key ? [{ name, photo: PHOTOS[key] }] : [];
-    }),
-  );
+  const cost = menuCost(ideas.menu, plan);
+  const over = cost - plan.perPlate;
   return (
     <div className="menu-card">
       <p className="service-note">
         <HandPlatter size={18} aria-hidden="true" /> {plan.service}
+      </p>
+      <div className="menu-budget" role="group" aria-label="Menu cost">
+        <div>
+          <span className="eyebrow">Menu level</span>
+          <strong>{MENU_TIER_LABELS[plan.tier]}</strong>
+        </div>
+        <div>
+          <span className="eyebrow">Estimated cost</span>
+          <strong>~{formatInr(cost)} per plate</strong>
+        </div>
+        <div>
+          <span className="eyebrow">Your food budget</span>
+          <strong>{formatInr(plan.perPlate)} per plate</strong>
+        </div>
+      </div>
+      <p className={`hint${over > plan.perPlate * 0.05 ? ' negative' : ''}`}>
+        {over > plan.perPlate * 0.05
+          ? `About ${formatInr(over)} per plate over budget — drop a dish, or move money to catering in the Budget tab.`
+          : `Fits your catering budget, with ${formatInr(plan.base)} per plate set aside for service, staff and staples. A bigger food budget brings premium dishes and more variety.`}
       </p>
       <ol className="courses">
         {courses.map((course) => (
@@ -144,26 +183,17 @@ function MenuCard({ details, ideas }: { details: EventDetails; ideas: Ideas }) {
             <ul className="dishes">
               {(chosen.get(course.id) ?? []).map((name) => {
                 const dish = findDish(course.id, name, details);
-                const photo = dish?.photo ? PHOTOS[dish.photo] : undefined;
                 return (
                   <li key={name} className="dish">
-                    {photo ? (
-                      <img src={photo.src} alt="" loading="lazy" decoding="async" />
-                    ) : (
-                      <span className="dish-initial" aria-hidden="true">
-                        {name.charAt(0)}
-                      </span>
-                    )}
-                    <span className="dish-name">
-                      {name}
-                      <span className="diet-tags">
-                        {dish?.diet === 'nonveg' ? (
-                          <span className="diet nonveg">Non-veg</span>
-                        ) : (
-                          <span className="diet veg">Veg</span>
-                        )}
-                        {dish?.jain && <span className="diet jain">Jain</span>}
-                      </span>
+                    <span className="dish-name">{name}</span>
+                    <span className="diet-tags">
+                      {dish?.diet === 'nonveg' ? (
+                        <span className="diet nonveg">Non-veg</span>
+                      ) : (
+                        <span className="diet veg">Veg</span>
+                      )}
+                      {dish?.jain && <span className="diet jain">Jain</span>}
+                      {dish && <span className="dish-cost">~{formatInr(dish.cost)}</span>}
                     </span>
                   </li>
                 );
@@ -172,23 +202,10 @@ function MenuCard({ details, ideas }: { details: EventDetails; ideas: Ideas }) {
           </li>
         ))}
       </ol>
-      <p className="hint">Dishes come from a checked list for this tradition.</p>
-      {credits.length > 0 && (
-        <details className="credits">
-          <summary>Dish photo credits (Wikimedia Commons)</summary>
-          <ul>
-            {credits.map(({ name, photo }) => (
-              <li key={name}>
-                <a href={photo.page} target="_blank" rel="noopener noreferrer">
-                  {name}
-                  <span className="sr-only"> photo source (opens in a new tab)</span>
-                </a>{' '}
-                · {photo.license}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <p className="hint">
+        Dishes come from a checked list for this tradition. Costs are rough per-plate estimates — your
+        caterer’s quote is what counts.
+      </p>
     </div>
   );
 }
@@ -198,6 +215,7 @@ export function IdeasPanel(props: Props) {
   const { details, ideas, loading, busySection, notice } = props;
   const [request, setRequest] = useState('');
   const ceremonies = ceremoniesFor(details);
+  const tier = decorTier(details, props.decor);
   const busy = (s: IdeasSection) => loading && (busySection === s || busySection === null);
 
   const submit = (e: FormEvent) => {
@@ -290,6 +308,7 @@ export function IdeasPanel(props: Props) {
                   key={c.id}
                   ceremony={c}
                   idea={ideas.ceremonies.find((i) => i.ceremonyId === c.id)}
+                  tier={tier}
                 />
               ))}
             </ul>
@@ -307,7 +326,7 @@ export function IdeasPanel(props: Props) {
               busy={loading}
               onRefresh={props.onRefreshSection}
             />
-            <MenuCard details={details} ideas={ideas} />
+            <MenuCard details={details} ideas={ideas} catering={props.catering} />
           </section>
 
           <section className="ideas-section" aria-labelledby="extras-heading" aria-busy={busy('extras')}>

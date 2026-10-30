@@ -1,13 +1,28 @@
 import { Building2, Check, MapPin, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { checkVenue, findVenues } from '../lib/api';
-import type { Venue } from '../types';
+import { LIMITS } from '../lib/validation';
+import type { Venue, VenueType } from '../types';
 
 interface Props {
   city: string;
   venueName: string;
+  venueType: VenueType;
+  /** The user's own description of the place they want. */
+  preference: string;
   onChoose: (name: string) => void;
 }
+
+const TYPE_WORDS: Partial<Record<VenueType, string>> = {
+  banquet: 'banquet halls',
+  outdoor: 'lawns and gardens',
+  'community-hall': 'community halls',
+  temple: 'kalyana mandapams and halls',
+  restaurant: 'restaurants',
+  cafe: 'cafés',
+  hotel: 'hotels and resorts',
+  office: 'conference venues',
+};
 
 function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; onChoose?: () => void }) {
   return (
@@ -17,8 +32,11 @@ function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; 
       </span>
       <div>
         <strong>{venue.name}</strong>
-        <span className="badge subtle">{venue.kind}</span>
-        {venue.distanceKm !== undefined && <span className="badge subtle">{venue.distanceKm} km</span>}
+        <div className="venue-tags">
+          <span className="badge subtle">{venue.kind}</span>
+          {venue.distanceKm !== undefined && <span className="badge subtle">{venue.distanceKm} km</span>}
+          {venue.match && <span className="badge match">{venue.match}</span>}
+        </div>
         {venue.address && <p className="muted small">{venue.address}</p>}
         <div className="venue-links">
           <a href={venue.mapsUrl} target="_blank" rel="noopener noreferrer">
@@ -50,14 +68,15 @@ function VenueRow({ venue, chosen, onChoose }: { venue: Venue; chosen: boolean; 
   );
 }
 
-/** Checks the booked venue on the map, or finds venues near the event city. */
-export function VenuePanel({ city, venueName, onChoose }: Props) {
+/** Checks the booked venue on the map, or finds the closest matches to what the user wants. */
+export function VenuePanel({ city, venueName, venueType, preference, onChoose }: Props) {
   const [lookup, setLookup] = useState<{ key: string; venues: Venue[]; error?: string } | null>(null);
-  const [results, setResults] = useState<Venue[] | null>(null);
+  const [wish, setWish] = useState(preference);
+  const [results, setResults] = useState<{ venues: Venue[]; wish: string } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   // A venue picked from our own search is already on the map — no need to look it up again.
-  const picked = results?.find((v) => v.name === venueName);
+  const picked = results?.venues.find((v) => v.name === venueName);
   const key = `${venueName}|${city}`;
 
   useEffect(() => {
@@ -77,14 +96,20 @@ export function VenuePanel({ city, venueName, onChoose }: Props) {
       ? lookup
       : null;
 
-  const search = async () => {
+  const search = async (e?: FormEvent) => {
+    e?.preventDefault();
     setSearching(true);
     setSearchError('');
-    const r = await findVenues(city);
-    setResults(r.venues);
-    setSearchError(r.error ?? (r.venues.length === 0 ? `No venues for ${city} on the open map yet.` : ''));
+    const wanted = wish.trim();
+    const r = await findVenues(city, venueType, wanted);
+    setResults({ venues: r.venues, wish: wanted });
+    setSearchError(
+      r.error ?? (r.venues.length === 0 ? `No matching places near ${city} on the open map yet.` : ''),
+    );
     setSearching(false);
   };
+
+  const exact = results?.venues.some((v) => v.match);
 
   return (
     <section className="card venue-panel" aria-labelledby="venue-heading">
@@ -120,24 +145,44 @@ export function VenuePanel({ city, venueName, onChoose }: Props) {
             </p>
           )
         ) : (
-          <p className="muted">No venue chosen yet — the plan works fine without one.</p>
+          <p className="muted">
+            No venue chosen yet — tell us what you’d like and we’ll find the closest matches.
+          </p>
         )}
       </div>
 
-      <button type="button" className="btn small" onClick={() => void search()} disabled={searching}>
-        <Search size={16} aria-hidden="true" /> {searching ? 'Searching…' : `Find venues near ${city}`}
-      </button>
+      <form className="venue-search" onSubmit={(e) => void search(e)}>
+        <label htmlFor="venue-wish">What kind of place would you like?</label>
+        <div className="ask-row">
+          <input
+            id="venue-wish"
+            value={wish}
+            maxLength={LIMITS.venueMax}
+            placeholder="e.g. rooftop with dine-in, garden with a banquet hall"
+            onChange={(e) => setWish(e.target.value)}
+          />
+          <button type="submit" className="btn primary" disabled={searching}>
+            <Search size={16} aria-hidden="true" /> {searching ? 'Searching…' : 'Find places'}
+          </button>
+        </div>
+        <p className="hint">
+          Searching around {city}
+          {TYPE_WORDS[venueType] ? `, focusing on ${TYPE_WORDS[venueType]}` : ''}. Takes a few seconds.
+        </p>
+      </form>
 
       <div aria-live="polite">
         {searchError && <p className="notice">{searchError}</p>}
-        {results && results.length > 0 && (
+        {results && results.venues.length > 0 && (
           <>
             <p className="hint">
-              {results.length} places near {city}, event venues first. Open Google Maps for photos, ratings
-              and reviews before you choose.
+              {results.wish && !exact
+                ? `Nothing on the open map is described as “${results.wish}” exactly — these are the closest matches. `
+                : `${results.venues.length} places near ${city}, best matches first. `}
+              Open Google Maps for photos, ratings and reviews before you choose.
             </p>
             <ul className="plain venue-list">
-              {results.map((v) => (
+              {results.venues.map((v) => (
                 <VenueRow
                   key={v.osmUrl}
                   venue={v}
