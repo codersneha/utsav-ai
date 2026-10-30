@@ -239,6 +239,33 @@ describe('search-engine style matching', () => {
     expect(coreName('Royal Aura Banket, Habra', 'Habra')).toBe('Royal Aura Banket');
   });
 
+  it('finds a place whose kind was misspelt by searching its distinctive name word', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      const q = decodeURIComponent(new URL(url).searchParams.get('q') ?? '');
+      if (q === 'Kolkata') return json([{ name: 'Kolkata', ...KOLKATA }]);
+      return json(
+        q.startsWith('mangalam,')
+          ? [
+              {
+                name: 'Mangalam Banquets Kolkata',
+                type: 'events_venue',
+                osm_type: 'way',
+                osm_id: 5,
+                ...KOLKATA,
+              },
+            ]
+          : [],
+      );
+    });
+    const venues = await checkVenue(
+      'mangalam banket kolkata',
+      'Kolkata',
+      fetchImpl as unknown as typeof fetch,
+      async () => {},
+    );
+    expect(venues[0]?.name).toBe('Mangalam Banquets Kolkata');
+  });
+
   it('matches a loosely typed name to the real one, but not to a different place', () => {
     expect(matchScore('bubble and tea', 'Bubble N Tea Asian Cafe')).toBeGreaterThanOrEqual(0.75);
     expect(matchScore('arsalan park street', 'Arsalan', 'Park Street, Kolkata')).toBeGreaterThanOrEqual(0.75);

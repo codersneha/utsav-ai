@@ -111,7 +111,7 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 
 ### ✅ Testing
 
-- **272 tests across 31 files** (Vitest + Testing Library), with about **96% line and 87% branch coverage** (`npm run coverage`).
+- **273 tests across 31 files** (Vitest + Testing Library), with about **96% line and 87% branch coverage** (`npm run coverage`).
 - Unit tests: budget maths (exact sums, priority boosts, user overrides, guest impact, trade-offs that really fix the plan), timeline (compression, priorities, dependencies, slippage alerts, custom tasks), checklist & quote summaries, the change report (including the explainer's "50 more guests, smaller budget, two weeks earlier" case), validation, prompts, AI-output parsing, storage guards, calendar export, rate limiter and cache.
 - Culture tests pin the facts: the Bengali wedding is served in the right course order and never as a buffet, vegetarian-only menus have no fish or meat, a reception-only plan has no haldi, invented dishes are dropped, Jain guests always get a safe choice, and every photo comes from Wikimedia Commons with a licence.
 - Budget and planning tests: menus get richer with the food budget and never drop must-have dishes, AI menus that overspend are trimmed, dishes stay in serving order, the guest ledger counts and weights replies (and its CSV export neutralises spreadsheet formulas), what-if costs match the plan, and amounts like “20 lakh” or “1.5 crore” are read correctly.

@@ -132,6 +132,39 @@ export function nameSimilarity(a: string, b: string): number {
 /** Words that don't identify a place ("and" vs "N", "the", "&"). */
 const FILLER = new Set(['and', 'n', 'the', 'of', 'a', 'at', 'in', 'near', 'by']);
 
+/** Words that say what kind of place it is, not which one. */
+const KIND_WORDS = new Set([
+  'banquet',
+  'banquets',
+  'hall',
+  'halls',
+  'cafe',
+  'restaurant',
+  'hotel',
+  'resort',
+  'lawn',
+  'lawns',
+  'garden',
+  'gardens',
+  'bar',
+  'kitchen',
+  'house',
+  'palace',
+  'club',
+  'lounge',
+  'party',
+  'marriage',
+]);
+
+/** The most telling word of a venue name (e.g. "mangalam" in "mangalam banket"), if it has one. */
+function distinctiveWord(name: string): string {
+  const kinds = new Set([...KIND_WORDS].map(soundKey));
+  const telling = words(name).filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !kinds.has(soundKey(w)));
+  return telling.length > 1 || words(name).length > 1
+    ? (telling.sort((a, b) => b.length - a.length)[0] ?? '')
+    : '';
+}
+
 const words = (text: string) =>
   text
     .toLowerCase()
@@ -282,6 +315,14 @@ export async function checkVenue(
     pool.push(...(await photonSearch(core, city, near, fetchImpl)));
     const plain = words(core).join(' ');
     if (plain !== core.toLowerCase()) pool.push(...(await photonSearch(plain, city, near, fetchImpl)));
+  }
+  // A misspelt kind of place ("banket") hides the real name from the map's search,
+  // so search the distinctive name word alone and let the fuzzy ranking decide.
+  const key = distinctiveWord(core);
+  if (rankMatches(pool, core, near).length === 0 && key) {
+    await pause(SPACING_MS);
+    pool.push(...(await nominatim(`${key}, ${city}`)));
+    pool.push(...(await photonSearch(key, city, near, fetchImpl)));
   }
   return rankMatches(pool, core, near);
 }
