@@ -121,7 +121,13 @@ export function VenuePanel({
   const [wish, setWish] = useState(preference);
   const [near, setNear] = useState(city);
   const [radiusKm, setRadiusKm] = useState(12);
-  const [results, setResults] = useState<{ venues: Venue[]; wish: string; area?: string } | null>(null);
+  const [results, setResults] = useState<{
+    venues: Venue[];
+    wish: string;
+    area?: string;
+    /** The same search on Google Maps, ranked by Google's ratings. */
+    google: string;
+  } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
 
@@ -179,9 +185,10 @@ export function VenuePanel({
     }
     const link = text.match(/https?:\/\/\S+/)?.[0] ?? '';
     if (!link) {
-      setLookup(
-        (l) => l && { ...l, error: 'No Google Maps link was copied yet — or paste it into the box above.' },
-      );
+      const message = 'No Google Maps link was copied yet — or paste it into “Find a specific venue”.';
+      // Shown next to whichever button was used: the name lookup's or the nearby results'.
+      if (lookup) setLookup({ ...lookup, error: message });
+      else setSearchError(message);
       return;
     }
     setQuery(link);
@@ -199,7 +206,14 @@ export function VenuePanel({
       radiusKm,
       position,
     });
-    setResults({ venues: r.venues, wish: wanted, area: r.area });
+    const what = wanted || TYPE_WORDS[venueType] || 'party venues';
+    const where = position ? `${position.lat.toFixed(4)},${position.lon.toFixed(4)}` : near.trim();
+    setResults({
+      venues: r.venues,
+      wish: wanted,
+      area: r.area,
+      google: googleSearch(`best ${what} near ${where}`),
+    });
     setSearchError(
       r.error ??
         (r.venues.length === 0 ? `No matching places on the open map around ${r.area ?? near}.` : ''),
@@ -387,10 +401,20 @@ export function VenuePanel({
           <>
             <p className="hint">
               {results.wish && !exact
-                ? `Nothing on the map is described as “${results.wish}” exactly — these are the closest matches. `
+                ? `No place is described as “${results.wish}” exactly — these are the closest matches. `
                 : `${results.venues.length} places, best matches first. `}
               Open Google Maps for photos, ratings and reviews before you choose.
             </p>
+            <div className="google-best">
+              <a className="btn small" href={results.google} target="_blank" rel="noopener noreferrer">
+                <Star size={14} aria-hidden="true" /> Top-rated on Google Maps
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+              <button type="button" className="btn small" onClick={() => void pasteLink()}>
+                <ClipboardPaste size={14} aria-hidden="true" /> Use the copied link
+              </button>
+              <span className="hint">Like one there? Share → Copy link, then use it here.</span>
+            </div>
             <ul className="plain venue-list">
               {results.venues.map((v) => (
                 <VenueRow

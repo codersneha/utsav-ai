@@ -67,6 +67,11 @@ describe('venues', () => {
       'href',
       expect.stringContaining('https://www.google.com/maps/search/'),
     );
+    // Google's own ranked list for the same search, one click away.
+    expect(screen.getByRole('link', { name: /Top-rated on Google Maps/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining(encodeURIComponent('best garden with banquet hall near')),
+    );
     expect(await axeViolations(container)).toEqual([]);
     await user.click(choose);
     expect(await screen.findByText(/“Rajbari Banquet” is your venue/)).toBeInTheDocument();
