@@ -47,6 +47,7 @@ export const MAX_IMAGE_BODY_BYTES = 4_200_000;
 /** One photo, base64-encoded. */
 const MAX_PHOTO_CHARS = 1_500_000;
 const MAX_MENU_PAGES = 8;
+const MENU_TIMEOUT_MS = 45_000;
 const MAX_HISTORY = 4;
 const SECTIONS: IdeasSection[] = ['decor', 'menu', 'extras'];
 
@@ -219,6 +220,8 @@ async function runJob(job: Job, base: Omit<GeminiRequest, 'prompt'>, fetchImpl?:
           maxOutputTokens: 8192,
         },
         fetchImpl,
+        // Several menu pages take longer to read than other requests.
+        MENU_TIMEOUT_MS,
       );
       const order = parsePartyOrder(text, job.details.guests, job.budget, job.known, job.images.length);
       return order ? { order } : null;

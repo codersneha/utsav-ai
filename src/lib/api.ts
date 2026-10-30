@@ -23,9 +23,13 @@ export interface AiResult<T> {
   notice?: string;
 }
 
-async function postJson(body: unknown, signal?: AbortSignal): Promise<Response> {
+async function postJson(
+  body: unknown,
+  signal?: AbortSignal,
+  timeoutMs = CLIENT_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   signal?.addEventListener('abort', () => controller.abort(), { once: true });
   try {
     return await fetch('/api/generate', {
@@ -280,7 +284,8 @@ export async function scanMenu(
   known: MenuItem[] = [],
 ): Promise<MenuScanResult> {
   try {
-    const res = await postJson({ mode: 'menuScan', details, images, budget, known });
+    // Reading several menu pages takes longer than other requests.
+    const res = await postJson({ mode: 'menuScan', details, images, budget, known }, undefined, 55_000);
     if (!res.ok) {
       return {
         error:
