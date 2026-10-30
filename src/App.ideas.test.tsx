@@ -315,3 +315,33 @@ describe('décor looks and the décor switch', () => {
     );
   });
 });
+
+describe('a venue the open map does not list', () => {
+  it('sends the user to Google Maps and uses the link they copy', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(apiResponder());
+    window.localStorage.setItem(
+      'utsav-ai:v1:details',
+      JSON.stringify({
+        ...birthdayDetails,
+        title: 'Tea party',
+        city: 'Kolkata',
+        date: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Tea party' });
+    await user.click(screen.getByRole('tab', { name: 'Vendors' }));
+    await user.type(screen.getByLabelText('Find a specific venue'), 'bubble and tea kolkata');
+    await user.click(screen.getByRole('button', { name: /^Find$/ }));
+    const search = await screen.findByRole('link', {
+      name: /Search Google Maps for “bubble and tea kolkata”/,
+    });
+    // The city is not repeated when it was already typed.
+    expect(search).toHaveAttribute('href', expect.stringMatching(/query=bubble%20and%20tea%20kolkata$/));
+    vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('https://maps.app.goo.gl/SJYx7dyvRCMqE1za9');
+    await user.click(screen.getByRole('button', { name: 'Use the copied link' }));
+    expect(await screen.findByText(/“Boho The Sky Cafe” is your venue/)).toBeInTheDocument();
+    expect(sentBodies(fetchSpy).some((b) => b.mode === 'venues' && b.action === 'link')).toBe(true);
+  });
+});

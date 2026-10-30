@@ -1,4 +1,13 @@
-import { Building2, Check, ExternalLink, LocateFixed, MapPin, Search, Star } from 'lucide-react';
+import {
+  Building2,
+  Check,
+  ClipboardPaste,
+  ExternalLink,
+  LocateFixed,
+  MapPin,
+  Search,
+  Star,
+} from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { checkVenue, findVenues, venueFromMapsLink } from '../lib/api';
 import { LIMITS } from '../lib/validation';
@@ -141,9 +150,12 @@ export function VenuePanel({
   };
 
   /** One box: a Google Maps link is read directly; a name is matched like a search engine would. */
-  const find = async (e: FormEvent) => {
+  const find = (e: FormEvent) => {
     e.preventDefault();
-    const text = query.trim();
+    void lookUp(query.trim());
+  };
+
+  const lookUp = async (text: string) => {
     if (text.length < 2) return;
     setLooking(true);
     if (isLink(text)) {
@@ -155,6 +167,25 @@ export function VenuePanel({
     const r = await checkVenue(text, city);
     setLooking(false);
     setLookup({ query: text, ...r });
+  };
+
+  /** Reads a Google Maps link the user just copied (Share → Copy link) and uses it. */
+  const pasteLink = async () => {
+    let text = '';
+    try {
+      text = (await navigator.clipboard.readText()).trim();
+    } catch {
+      // Clipboard access declined or unsupported; the box above still takes the link.
+    }
+    const link = text.match(/https?:\/\/\S+/)?.[0] ?? '';
+    if (!link) {
+      setLookup(
+        (l) => l && { ...l, error: 'No Google Maps link was copied yet — or paste it into the box above.' },
+      );
+      return;
+    }
+    setQuery(link);
+    void lookUp(link);
   };
 
   const discover = async (position?: { lat: number; lon: number }) => {
@@ -225,7 +256,7 @@ export function VenuePanel({
         )}
       </div>
 
-      <form className="venue-find" onSubmit={(e) => void find(e)}>
+      <form className="venue-find" onSubmit={find}>
         <label htmlFor="venue-query">Find a specific venue</label>
         <div className="venue-find-row">
           <input
@@ -262,18 +293,26 @@ export function VenuePanel({
                   `We couldn’t find “${lookup.query}” on the open map — many local places aren’t listed there yet.`}
               </p>
               {!isLink(lookup.query) && (
-                <p>
-                  <a
-                    className="btn small"
-                    href={googleSearch(withCity(lookup.query, city))}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink size={14} aria-hidden="true" /> Search Google Maps for “{lookup.query}”
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>{' '}
-                  then copy its link (Share → Copy link) and paste it in the box above.
-                </p>
+                <ol className="lookup-steps">
+                  <li>
+                    <a
+                      className="btn small"
+                      href={googleSearch(withCity(lookup.query, city))}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink size={14} aria-hidden="true" /> Search Google Maps for “{lookup.query}”
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>{' '}
+                    — it understands loose names.
+                  </li>
+                  <li>Open the right place, then Share → Copy link.</li>
+                  <li>
+                    <button type="button" className="btn small primary" onClick={() => void pasteLink()}>
+                      <ClipboardPaste size={14} aria-hidden="true" /> Use the copied link
+                    </button>
+                  </li>
+                </ol>
               )}
             </div>
           ))}
