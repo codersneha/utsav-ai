@@ -5,6 +5,7 @@ import {
   coreName,
   distanceKm,
   findVenues,
+  geocodeCity,
   googleTextSearch,
   matchScore,
   nameSimilarity,
@@ -12,7 +13,7 @@ import {
   resolveMapsLink,
   searchesFor,
 } from './venues.js';
-import { placesNear } from './places.js';
+import { placesNear, type PlaceRow } from './places.js';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -362,8 +363,10 @@ describe('the offline venue index (Overture Maps)', () => {
       centre: { name: 'Kolkata', lat: 22.5726, lon: 88.3639 },
       pause: async () => {},
     });
-    // Indexed places come first; the open map only tops up a short list.
-    expect(venues.map((v) => v.name).slice(0, 2)).toEqual(['Sky Lounge Rooftop Cafe', 'Corner Coffee']);
+    // Indexed places come first (a "…Cafe" filed as a restaurant counts); the open map only tops up.
+    const names = venues.map((v) => v.name);
+    expect(names[0]).toBe('Sky Lounge Rooftop Cafe');
+    expect(names.slice(0, 3)).toEqual(expect.arrayContaining(['Corner Coffee', 'Bubble N Tea Asian Cafe']));
     const rooftop = await findVenues('Kolkata', fetchImpl, {
       venueType: 'restaurant',
       preference: 'rooftop',
@@ -379,5 +382,55 @@ describe('the offline venue index (Overture Maps)', () => {
       ['Bubble N Tea Asian Cafe', 'restaurant', 22.58018, 88.41182, 'GC 15, Sector III, Salt Lake', 0.8],
     ]);
     expect(await placesNear(10, 70, 5)).toEqual([]);
+  });
+});
+
+describe('locating an area', () => {
+  it('prefers the place itself over a landmark with the same name', async () => {
+    const fetchImpl = (async () =>
+      json([
+        {
+          name: 'Airport',
+          category: 'aeroway',
+          lat: '22.65',
+          lon: '88.44',
+          display_name: 'Airport, Bidhannagar, India',
+        },
+        {
+          name: 'Bidhannagar',
+          category: 'place',
+          lat: '22.59',
+          lon: '88.41',
+          display_name: 'Bidhannagar, Kolkata, India',
+        },
+      ])) as unknown as typeof fetch;
+    expect(await geocodeCity('Salt Lake, Kolkata', fetchImpl)).toEqual({
+      name: 'Bidhannagar, Kolkata',
+      lat: 22.59,
+      lon: 88.41,
+    });
+  });
+});
+
+describe('best cafés nearby', () => {
+  it('counts cafés filed as restaurants, but not internet cafés', async () => {
+    const tiles = async () =>
+      [
+        ['Out n Beyond Cafe & Bistro', 'restaurant', 22.58, 88.41, 'Salt Lake', 0.9],
+        ['Biswanath Internet Cafe', 'restaurant', 22.58, 88.41, 'Salt Lake', 0.9],
+        ['Sweet Corner', 'bakery', 22.58, 88.41, 'Salt Lake', 0.9],
+        ['Cafe Coffee Day', 'coffee shop', 22.58, 88.41, 'Salt Lake', 0.27],
+      ] as PlaceRow[];
+    const venues = await findVenues('Salt Lake', (async () => json([])) as unknown as typeof fetch, {
+      venueType: 'cafe',
+      centre: { name: 'Salt Lake', lat: 22.58, lon: 88.41 },
+      tiles,
+      pause: async () => {},
+    });
+    const names = venues.map((v) => v.name);
+    expect(names[0]).toBe('Out n Beyond Cafe & Bistro');
+    expect(names).not.toContain('Biswanath Internet Cafe');
+    // A chain (low weight) ranks below an independent café, and a bakery is only a near fit.
+    expect(names.indexOf('Cafe Coffee Day')).toBeGreaterThan(0);
   });
 });

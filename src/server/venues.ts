@@ -535,10 +535,13 @@ export interface Area {
 /** Coordinates of a town, locality or PIN code (first match in India). */
 export async function geocodeCity(city: string, fetchImpl: typeof fetch = fetch): Promise<Area> {
   const data = await getJson(
-    `${NOMINATIM}?format=jsonv2&limit=1&countrycodes=in&q=${encodeURIComponent(city)}`,
+    `${NOMINATIM}?format=jsonv2&limit=5&countrycodes=in&q=${encodeURIComponent(city)}`,
     fetchImpl,
   );
-  const hit = Array.isArray(data) && isHit(data[0]) ? data[0] : null;
+  // Prefer a real place (city, suburb, neighbourhood) over a landmark of the same name:
+  // "Salt Lake, Kolkata" is Bidhannagar, not the airport.
+  const hits = Array.isArray(data) ? data.filter(isHit) : [];
+  const hit = hits.find((h) => h.category === 'place' || h.category === 'boundary') ?? hits[0] ?? null;
   const lat = Number(hit?.lat);
   const lon = Number(hit?.lon);
   if (!hit || !Number.isFinite(lat) || !Number.isFinite(lon)) throw new VenueLookupError('City not found');
@@ -660,6 +663,20 @@ export interface VenueSearch {
   tiles?: TileLoader;
 }
 
+/** Close cousins of a venue type: they fit, but less than the real thing. */
+const NEAR_KINDS: Partial<Record<VenueType, RegExp>> = {
+  cafe: /dessert|bakery|juice|ice cream|patisserie|smoothie|tea|bistro/,
+  restaurant: /eatery|food court|lounge/,
+  hotel: /guest house|lodging|bed and breakfast/,
+};
+
+/** Names that say what a place is, when it is filed under another kind ("Out n Beyond Cafe & Bistro"). */
+const NAME_KINDS: Partial<Record<VenueType, RegExp>> = {
+  cafe: /^(?!.*\b(internet|cyber|billiards?|snooker|gaming)\b).*(\bcaf[eé]\b|coffee|bistro|teafe)/i,
+  restaurant: /restaurant|dhaba|kitchen|grill|diner|bistro/i,
+  hotel: /\bhotel\b|resort|\binn\b/i,
+};
+
 /** Venue types where a name like "… Banquet" or "… Marriage Hall" is itself a good fit. */
 const HALL_TYPES = new Set<VenueType>(['undecided', 'home', 'banquet', 'community-hall', 'temple']);
 
@@ -672,7 +689,7 @@ const TYPE_KINDS: Record<VenueType, RegExp> = {
   'community-hall': /community|event venue|banquet|marriage|convention/,
   temple: /marriage|banquet|wedding|community|event venue/,
   restaurant: /restaurant|eatery|dining|diner|bistro|grill|bar|pub|brewery|food court|buffet/,
-  cafe: /caf|coffee|tea|dessert|bakery|juice|bubble|ice cream|patisserie|smoothie/,
+  cafe: /caf|coffee|bubble tea/,
   hotel: /hotel|resort|lodging|inn|guest house|motel|bed and breakfast/,
   office: /convention|conference|hotel|event venue|coworking|business center/,
 };
@@ -702,14 +719,22 @@ async function indexedVenues(
     if (km > radiusKm) continue;
     const text = `${name} ${kind}`.toLowerCase();
     const matched = wanted.filter(({ re }) => re.test(text)).map(({ w }) => w);
-    // Halls are often listed as hotels or restaurants; a venue-like name counts too.
-    const typeFit = fits.test(kind.toLowerCase()) || (HALL_TYPES.has(venueType) && EVENT_NAME.test(name));
-    if (!typeFit && matched.length === 0) continue;
+    // Halls are often listed as hotels or restaurants, cafés as restaurants; a telling name counts too.
+    const fit =
+      fits.test(kind.toLowerCase()) ||
+      (HALL_TYPES.has(venueType) && EVENT_NAME.test(name)) ||
+      NAME_KINDS[venueType]?.test(name)
+        ? 2
+        : NEAR_KINDS[venueType]?.test(kind.toLowerCase())
+          ? 1
+          : 0;
+    if (fit === 0 && matched.length === 0) continue;
     scored.push({
       ...fromRow(row, city),
       distanceKm: km,
       ...(matched.length > 0 ? { match: `Matches “${matched.join(', ')}”` } : {}),
-      score: matched.length * 3 + (typeFit ? 2 : 0) + weight * 3 - (km / radiusKm) * 1.5,
+      // Like "best … near me": the right kind of place, well established, close by.
+      score: matched.length * 3 + fit + weight * 3 - (km / radiusKm) * 3,
     });
   }
   const seen = new Set<string>();

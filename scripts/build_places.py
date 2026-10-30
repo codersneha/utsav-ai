@@ -10,7 +10,8 @@ local cafés and halls that OpenStreetMap lacks, with no API key.
 
 Each tile covers 0.5° × 0.5° (about 55 km) and is a gzipped JSON array of
 [name, kind, lat, lon, address, weight] rows. `weight` (0–1) says how
-established a listing is: confidence, number of sources, website or socials.
+established a listing is: confidence, number of sources, website or socials;
+chains (the same name 8+ times in India) get a lower weight.
 """
 
 import gzip
@@ -19,6 +20,7 @@ import math
 import os
 import re
 import sys
+import unicodedata
 
 RELEASE = "2026-10-21.0"
 TILE = 0.5
@@ -67,6 +69,15 @@ def kind_of(name, cat, tax):
     return (tax or cat or "place").replace("_", " ")
 
 
+CHAIN_MIN = 8
+
+
+def brand_of(name):
+    """The name without branch details: 'Cafe Coffee Day - Salt Lake' -> 'cafecoffeeday'."""
+    base = re.split(r" - | \| |,|\(", name)[0]
+    return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode().lower())
+
+
 def weight_of(confidence, links, nsources):
     conf = confidence or 0
     return round(min(1.0, 0.6 * conf + 0.15 * min(links or 0, 2) + 0.1 * min((nsources or 1) - 1, 1)), 2)
@@ -79,6 +90,10 @@ def tiles(src, out_dir):
         f"""SELECT name, cat, tax, street, locality, lat, lon, confidence, links, nsources
             FROM '{src}' WHERE name IS NOT NULL AND length(name) BETWEEN 2 AND 80 AND confidence >= 0.4"""
     ).fetchall()
+    # Chains (the same name 8+ times) are rarely what "best near me" means.
+    brands = {}
+    for row in rows:
+        brands[brand_of(row[0])] = brands.get(brand_of(row[0]), 0) + 1
     buckets = {}
     kept = 0
     for name, cat, tax, street, locality, lat, lon, conf, links, nsources in rows:
@@ -89,7 +104,14 @@ def tiles(src, out_dir):
         address = ", ".join(p for p in (street, locality) if p)[:120]
         key = f"{math.floor(lat / TILE)}_{math.floor(lon / TILE)}"
         buckets.setdefault(key, []).append(
-            [name.strip(), kind, lat, lon, address, weight_of(conf, links, nsources)]
+            [
+                name.strip(),
+                kind,
+                lat,
+                lon,
+                address,
+                round(weight_of(conf, links, nsources) * (0.3 if brands[brand_of(name)] >= CHAIN_MIN else 1), 2),
+            ]
         )
     os.makedirs(out_dir, exist_ok=True)
     for key, items in buckets.items():
