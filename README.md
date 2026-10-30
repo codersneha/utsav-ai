@@ -123,7 +123,7 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 
 ### ♿ Accessibility (WCAG 2.2 AA-minded)
 
-- **Lighthouse Accessibility 100** on desktop and mobile, plus axe-core checks at every major UI state inside the automated tests.
+- **Lighthouse on the live site: 100 Performance, Accessibility, Best Practices and SEO on mobile** (99 / 100 / 100 / 100 on desktop), plus axe-core checks at every major UI state inside the automated tests.
 
 - Semantic landmarks, a skip link, and a logical heading order. Focus moves to the plan heading after submit, and to the change report after an edit.
 - An error summary with links to the invalid fields, plus `aria-invalid`, `aria-describedby` and inline messages.
