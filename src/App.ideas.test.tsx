@@ -152,19 +152,57 @@ describe('guest ledger', () => {
 });
 
 describe('what if', () => {
-  it('prices extra guests and can re-plan for them with undo', async () => {
+  it('shows what 30 no-shows waste and cost, and what telling the caterer saves', async () => {
     const { user, container } = await openBengaliSample();
     await user.click(screen.getByRole('tab', { name: 'What if' }));
-    const extra = screen.getByLabelText('Extra guests');
+    const card = screen.getByRole('region', { name: 'If your guest count changes' });
+    const count = within(card).getByLabelText('Guests who don’t come');
+    await user.clear(count);
+    await user.type(count, '30');
+    const table = within(card).getByRole('table', { name: /no-shows/ });
+    expect(within(table).getByRole('row', { name: /Plates cooked, not eaten/ })).toHaveTextContent('0');
+    expect(within(table).getByRole('row', { name: /Plates cooked, not eaten/ })).toHaveTextContent('30');
+    expect(within(card).getByText(/Lost if you don’t tell/)).toBeInTheDocument();
+    expect(within(card).getByText(/How to handle it/)).toBeInTheDocument();
+    expect(await axeViolations(container)).toEqual([]);
+
+    // A bigger share missing than the caterer's minimum: some food is paid for either way.
+    await user.clear(count);
+    await user.type(count, '100');
+    const row = within(card).getByRole('row', { name: /Plates cooked, not eaten/ });
+    expect(row).toHaveTextContent('100');
+    expect(row).toHaveTextContent('70');
+  });
+
+  it('shows the plates, people and money for 50 more guests, and can re-plan with undo', async () => {
+    const { user, container } = await openBengaliSample();
+    await user.click(screen.getByRole('tab', { name: 'What if' }));
+    const card = screen.getByRole('region', { name: 'If your guest count changes' });
+    await user.click(within(card).getByRole('button', { name: /More come/ }));
+    const extra = within(card).getByLabelText('Extra guests who come');
     await user.clear(extra);
     await user.type(extra, '50');
-    expect(screen.getByRole('region', { name: 'More guests turn up' })).toHaveTextContent(/₹[\d,]+ more/);
+    expect(within(card).getByText('Extra plates to order')).toBeInTheDocument();
+    expect(within(card).getByText('55 (50 + 5)')).toBeInTheDocument();
+    expect(within(card).getByRole('row', { name: /Servers/ })).toBeInTheDocument();
+    expect(within(card).getByRole('row', { name: /Chairs/ })).toHaveTextContent('50');
     expect(await axeViolations(container)).toEqual([]);
-    await user.click(screen.getByRole('button', { name: 'Plan for 350 guests' }));
+    await user.click(within(card).getByRole('button', { name: 'Plan for 350 guests' }));
     const change = await screen.findByRole('region', { name: /Plan updated/ });
     expect(change).toHaveTextContent('Guests: 300 → 350');
     await user.click(within(change).getByRole('button', { name: /Undo/ }));
     expect(screen.getByRole('list', { name: 'Event details' })).toHaveTextContent('300 guests');
+  });
+
+  it('can ask the planner how to handle the scenario', async () => {
+    const { user, fetchSpy } = await openBengaliSample();
+    await user.click(screen.getByRole('tab', { name: 'What if' }));
+    const card = screen.getByRole('region', { name: 'If your guest count changes' });
+    await user.click(within(card).getByRole('button', { name: /Ask the planner how to handle this/ }));
+    expect(screen.getByRole('tab', { name: 'Ask AI' })).toHaveAttribute('aria-selected', 'true');
+    await vi.waitFor(() =>
+      expect(sentBodies(fetchSpy).some((b) => b.mode === 'ask' && /don’t come/.test(b.question))).toBe(true),
+    );
   });
 
   it('shows next steps on the overview that open the right tab', async () => {

@@ -1,75 +1,254 @@
 import type { EventPlan, VenueType } from '../types.js';
+import { formatInr } from './plan.js';
 
-/** Roughly what one extra guest costs: food per plate plus the per-guest share of other costs. */
-export function costPerExtraGuest(plan: EventPlan, foodPerPlate: number): number {
+/** Rules of thumb behind the guest-change numbers. They are shown to the user, who can check them with the caterer. */
+export const GUEST_RULES = {
+  /** Cooked food eaten per guest at an Indian celebration meal. */
+  foodKgPerGuest: 0.45,
+  guestsPerServerSeated: 25,
+  guestsPerServerBuffet: 40,
+  guestsPerKitchenHelper: 60,
+  guestsPerTable: 10,
+  /** Extra plates caterers are asked to cook on top of the new guests. */
+  extraPlatesBufferPct: 10,
+  /** Share of the expected headcount a caterer usually insists on being paid for. */
+  guaranteePct: 90,
+} as const;
+
+/** Categories that can give up a little money to pay for extra guests. */
+const TRIMMABLE = new Set(['decor', 'entertainment', 'photo', 'stage', 'promotion', 'attire']);
+/** The most that is asked of any one category. */
+const MAX_TRIM = 0.2;
+
+const kg = (plates: number) => Math.round(plates * GUEST_RULES.foodKgPerGuest * 10) / 10;
+
+/** Food per plate (from the plan's food budget) and what each guest adds to other lines (gifts, invitations…). */
+export function guestCosts(plan: EventPlan) {
   const { budget, details } = plan;
-  const otherPerGuest = budget.lines
-    .filter((l) => l.scalesWithGuests && l.id !== 'catering')
-    .reduce((sum, l) => sum + l.amount / Math.max(1, details.guests), 0);
-  return Math.round(foodPerPlate + otherPerGuest);
+  const guests = Math.max(1, details.guests);
+  const foodPerPlate = Math.round((budget.lines.find((l) => l.id === 'catering')?.amount ?? 0) / guests);
+  const extras = budget.lines
+    .filter((l) => l.scalesWithGuests && l.id !== 'catering' && l.amount > 0)
+    .map((l) => ({ label: l.label, perGuest: Math.round(l.amount / guests) }));
+  const extrasPerGuest = extras.reduce((sum, e) => sum + e.perGuest, 0);
+  return { foodPerPlate, extras, extrasPerGuest };
 }
 
 const contingencyOf = (plan: EventPlan) => plan.budget.lines.find((l) => l.id === 'contingency')?.amount ?? 0;
 
+export interface ShiftOptions {
+  /** Money coming in per guest who attends (entry fee, contribution, sponsor share). 0 for a family event. */
+  revenuePerGuest?: number;
+}
+
 export interface MoreGuests {
   extra: number;
+  newTotal: number;
+  /** Extra plates to order: the new guests plus a small buffer. */
+  platesToOrder: number;
+  bufferPlates: number;
+  foodKg: number;
+  foodCost: number;
+  /** Other lines that grow with guests (gifts, invitations…), each for the extra guests. */
+  otherCosts: { label: string; amount: number }[];
   cost: number;
+  people: { servers: number; helpers: number; chairs: number; tables: number };
   contingency: number;
   /** Extra cost not covered by the contingency (0 if covered). */
   shortfall: number;
+  /** Where the rest could come from: a little off categories that can give. */
+  trims: { label: string; amount: number }[];
+  /** What is still missing after the trims. */
+  remaining: number;
+  /** Money in minus total cost, when the event brings in money per guest. */
+  net?: number;
   steps: string[];
 }
 
-/** What happens if `extra` more people turn up than planned. */
+/** What happens if `extra` more people turn up than planned: plates, people, money and where it comes from. */
 export function moreGuests(
   plan: EventPlan,
   extra: number,
-  foodPerPlate: number,
   served: boolean,
+  opts: ShiftOptions = {},
 ): MoreGuests {
-  const cost = extra * costPerExtraGuest(plan, foodPerPlate);
+  const { details, budget } = plan;
+  const { foodPerPlate, extras } = guestCosts(plan);
+  const newTotal = details.guests + extra;
+  const bufferPlates = Math.ceil((extra * GUEST_RULES.extraPlatesBufferPct) / 100);
+  const platesToOrder = extra + bufferPlates;
+  const foodCost = platesToOrder * foodPerPlate;
+  const otherCosts = extras.map((e) => ({ label: e.label, amount: e.perGuest * extra }));
+  const cost = foodCost + otherCosts.reduce((sum, o) => sum + o.amount, 0);
+
+  const perServer = served ? GUEST_RULES.guestsPerServerSeated : GUEST_RULES.guestsPerServerBuffet;
+  const more = (per: number) => Math.ceil(newTotal / per) - Math.ceil(details.guests / per);
+  const people = {
+    servers: more(perServer),
+    helpers: more(GUEST_RULES.guestsPerKitchenHelper),
+    chairs: extra,
+    tables: more(GUEST_RULES.guestsPerTable),
+  };
+
   const contingency = contingencyOf(plan);
+  const shortfall = Math.max(0, cost - contingency);
+  // Ask each flexible category for a share of the gap, never more than a fifth of what it holds.
+  const givers = budget.lines.filter((l) => TRIMMABLE.has(l.id) && l.amount > 0);
+  const room = givers.reduce((sum, l) => sum + l.amount * MAX_TRIM, 0);
+  const take = Math.min(shortfall, room);
+  const trims =
+    take > 0
+      ? givers
+          .map((l) => ({ label: l.label, amount: Math.round((take * l.amount * MAX_TRIM) / room) }))
+          .filter((t) => t.amount > 0)
+      : [];
+  const remaining = Math.max(0, shortfall - trims.reduce((sum, t) => sum + t.amount, 0));
+  const net =
+    opts.revenuePerGuest && opts.revenuePerGuest > 0
+      ? newTotal * opts.revenuePerGuest - (budget.total + cost)
+      : undefined;
+
+  const list = (items: string[]) => items.join(', ');
+  const staff = [
+    people.servers > 0 && `${people.servers} more server${people.servers > 1 ? 's' : ''}`,
+    people.helpers > 0 && `${people.helpers} kitchen helper${people.helpers > 1 ? 's' : ''}`,
+    `${people.chairs} chairs`,
+    people.tables > 0 && `${people.tables} table${people.tables > 1 ? 's' : ''}`,
+  ].filter((x): x is string => Boolean(x));
   const steps = [
-    'Agree the price of extra plates in the caterer’s contract now, and ask them to cook a 5–10% buffer.',
-    'Keep a quick standby menu (dal, rice, a paneer or chicken curry) the caterer can make within an hour.',
+    `Tell the caterer now: ${platesToOrder} extra plates (${extra} guests + ${bufferPlates} buffer, about ${kg(platesToOrder)} kg of food). Get the extra-plate price in writing.`,
+    `Arrange ${list(staff)}. Service staff is usually in the per-plate price — confirm it.`,
     served
       ? 'Plan an extra seated batch: elders and VIPs first, with a family member managing each batch.'
       : 'Add a second buffet line so queues stay short.',
-    'Ask the venue for spare chairs and tables on standby, and check its maximum capacity.',
-    'Order 10% extra return gifts, sweets boxes and water.',
+    shortfall === 0
+      ? `Your contingency of ${formatInr(contingency)} covers the ${formatInr(cost)}. Keep the rest for surprises.`
+      : trims.length > 0
+        ? `Contingency covers ${formatInr(Math.min(cost, contingency))}. Cover the other ${formatInr(shortfall)} by trimming ${list(trims.map((t) => `${t.label} ${formatInr(t.amount)}`))}${remaining > 0 ? `, and find ${formatInr(remaining)} more` : ''}.`
+        : `Contingency covers ${formatInr(Math.min(cost, contingency))}. Find the other ${formatInr(shortfall)} from the family, or trim the guest list.`,
+    `Ask the venue for its maximum capacity and fire-safety limit for ${newTotal} people, and keep spare chairs on standby.`,
+    'Keep a quick standby menu (dal, rice, one curry) the caterer can make within an hour, and order 10% extra return gifts and water.',
   ];
-  return { extra, cost, contingency, shortfall: Math.max(0, cost - contingency), steps };
+  return {
+    extra,
+    newTotal,
+    platesToOrder,
+    bufferPlates,
+    foodKg: kg(platesToOrder),
+    foodCost,
+    otherCosts,
+    cost,
+    people,
+    contingency,
+    shortfall,
+    trims,
+    remaining,
+    ...(net !== undefined ? { net } : {}),
+    steps,
+  };
+}
+
+/** What one way of handling the no-shows costs and leaves over. */
+export interface Outcome {
+  /** Plates the caterer is paid for. */
+  paidPlates: number;
+  /** Paid for but not eaten. */
+  wastedPlates: number;
+  wastedKg: number;
+  /** Money paid for food nobody eats. */
+  foodLoss: number;
+  /** Food money you keep because the caterer was told in time. */
+  foodKept: number;
+  /** Everything still unspent: the kept food money plus the untouched contingency. */
+  leftOver: number;
+  /** Money in minus total cost, when the event brings in money per guest. */
+  net?: number;
 }
 
 export interface FewerGuests {
   missing: number;
-  /** Food paid for but not eaten, if the caterer is not told in time. */
-  wasted: number;
-  /** What is saved if the caterer is told before the final-headcount deadline. */
-  saved: number;
+  planned: number;
+  attending: number;
+  /** The headcount the caterer will insist on being paid for. */
+  guaranteed: number;
+  ifTold: Outcome;
+  ifNotTold: Outcome;
+  /** How much more you keep by telling the caterer in time. */
+  savedByTelling: number;
+  /** Gifts, invitations and similar items bought for guests who do not come — can often be returned or reused. */
+  reusableExtras: number;
   steps: string[];
 }
 
 const OUTDOOR_TYPES: VenueType[] = ['outdoor', 'undecided', 'home'];
 
-/** What happens if `missing` guests cannot come (rain, strike, illness). */
-export function fewerGuests(plan: EventPlan, missing: number, foodPerPlate: number): FewerGuests {
-  const outdoor = OUTDOOR_TYPES.includes(plan.details.venueType);
+/** What happens if `missing` guests cannot come (rain, strike, illness): waste, loss, what is left and how to tackle it. */
+export function fewerGuests(
+  plan: EventPlan,
+  missing: number,
+  guaranteePct: number = GUEST_RULES.guaranteePct,
+  opts: ShiftOptions = {},
+): FewerGuests {
+  const { details, budget } = plan;
+  const { foodPerPlate, extrasPerGuest } = guestCosts(plan);
+  const planned = details.guests;
+  const gone = Math.min(Math.max(0, Math.round(missing)), Math.max(0, planned - 1));
+  const attending = planned - gone;
+  const guaranteed = Math.min(planned, Math.ceil((planned * guaranteePct) / 100));
+  const contingency = contingencyOf(plan);
+  const revenue = opts.revenuePerGuest && opts.revenuePerGuest > 0 ? opts.revenuePerGuest : 0;
+
+  const outcome = (told: boolean): Outcome => {
+    const paidPlates = told ? Math.max(attending, guaranteed) : planned;
+    const wastedPlates = paidPlates - attending;
+    const foodKept = (planned - paidPlates) * foodPerPlate;
+    return {
+      paidPlates,
+      wastedPlates,
+      wastedKg: kg(wastedPlates),
+      foodLoss: wastedPlates * foodPerPlate,
+      foodKept,
+      leftOver: foodKept + contingency,
+      ...(revenue > 0 ? { net: attending * revenue - (budget.total - foodKept) } : {}),
+    };
+  };
+  const ifTold = outcome(true);
+  const ifNotTold = outcome(false);
+  const savedByTelling = ifTold.foodKept - ifNotTold.foodKept;
+  const priority = details.priorities[0];
+
   const steps = [
-    'Fix the caterer’s minimum guaranteed headcount at about 90% of the expected guests, not 100%.',
-    'Confirm the final headcount 48–72 hours before — use the Guests tab to see who has replied.',
-    'Arrange takeaway boxes so leftover food goes home with family and staff.',
-    'Line up a food-rescue group or local NGO to collect surplus cooked food safely the same night.',
+    `Tell the caterer by 3 days before that about ${attending} will come. Their minimum is about ${guaranteed} plates, so you pay for ${ifTold.paidPlates}, not ${planned} — you keep ${formatInr(savedByTelling)}.`,
+    ifTold.wastedPlates > 0
+      ? `About ${ifTold.wastedPlates} plates (${ifTold.wastedKg} kg) will still be cooked and not eaten: pack takeaway boxes for family and staff, and call a food-rescue group or NGO to collect the rest that night.`
+      : 'Nothing is left over once the caterer cooks only for the people who come.',
+    `Check the contract: if it guarantees 100% of the headcount, ask to lower it to about ${guaranteePct}% — that is what limits this kind of loss.`,
+    ifTold.foodKept > 0
+      ? `Use the ${formatInr(ifTold.foodKept)} you keep where it counts${priority ? ` — your priority was ${priority}` : ''} — or leave it in the contingency.`
+      : 'Keep the contingency untouched for other surprises.',
+    extrasPerGuest > 0
+      ? `Return or reuse the gifts and printed items bought for the ${gone} who won’t come (about ${formatInr(gone * extrasPerGuest)}).`
+      : 'Confirm the final headcount 48–72 hours before — use the Guests tab to see who has replied.',
   ];
-  if (outdoor) {
+  if (OUTDOOR_TYPES.includes(details.venueType)) {
     steps.push(
       'Book a waterproof shamiana or German hanger, or keep an indoor hall on standby, and check the forecast 5 days before.',
       'Cover walkways, add non-slip mats, keep a generator and lift electricals off the ground.',
     );
   }
   steps.push('Message guests on WhatsApp early about any change of venue or timing.');
-  const cost = missing * foodPerPlate;
-  return { missing, wasted: cost, saved: cost, steps };
+
+  return {
+    missing: gone,
+    planned,
+    attending,
+    guaranteed,
+    ifTold,
+    ifNotTold,
+    savedByTelling,
+    reusableExtras: gone * extrasPerGuest,
+    steps,
+  };
 }
 
 export interface BudgetCut {

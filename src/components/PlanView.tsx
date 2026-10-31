@@ -32,6 +32,7 @@ import { Tabs } from './Tabs';
 import { TimelinePanel } from './TimelinePanel';
 import { WhatIfPanel } from './WhatIfPanel';
 import { menuFor } from '../lib/culture';
+import { guestTotals } from '../lib/guests';
 
 const TYPE_LABEL = {
   wedding: 'Wedding',
@@ -214,6 +215,9 @@ export default function PlanView({ planner, plan, onEdit }: PlanViewProps) {
         <WhatIfPanel
           plan={plan}
           served={/seated/i.test(menuFor(details).service)}
+          expectedFromList={
+            planner.guests.entries.length > 0 ? guestTotals(planner.guests.entries).expected : undefined
+          }
           onPlanFor={(n) => void planner.setGuestCount(n)}
           onAsk={(q) => {
             setTab('ask');
