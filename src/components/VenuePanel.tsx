@@ -51,6 +51,52 @@ function VenueRow({ venue }: { venue: Venue }) {
   );
 }
 
+/** What the panel knows about the venue so far: reading a link, chosen, typed, or nothing yet. */
+function VenueStatus({
+  pendingLink,
+  resolveError,
+  known,
+  typedName,
+}: {
+  pendingLink: boolean;
+  resolveError?: string;
+  known?: Venue;
+  typedName: string;
+}) {
+  let content;
+  if (pendingLink) {
+    content = resolveError ? (
+      <p className="notice warning">{resolveError}</p>
+    ) : (
+      <p className="muted">Reading your Google Maps link…</p>
+    );
+  } else if (known) {
+    content = (
+      <>
+        <p className="notice success">
+          <Check size={16} aria-hidden="true" /> “{known.name}” is your venue.
+        </p>
+        <ul className="plain venue-list">
+          <VenueRow venue={known} />
+        </ul>
+      </>
+    );
+  } else if (typedName) {
+    content = (
+      <p className="muted">
+        Your venue: <strong>{typedName}</strong>. Add its Google Maps link to save its exact location.
+      </p>
+    );
+  } else {
+    content = <p className="muted">No venue yet — pick one on Google Maps and paste its link here.</p>;
+  }
+  return (
+    <div aria-live="polite" className="venue-status">
+      {content}
+    </div>
+  );
+}
+
 /**
  * The venue comes from Google Maps: the user finds the place there (the search
  * is already set up for the kind of venue they want), copies its link and
@@ -113,30 +159,12 @@ export function VenuePanel({
         Venue
       </h4>
 
-      <div aria-live="polite" className="venue-status">
-        {pendingLink ? (
-          resolveError ? (
-            <p className="notice warning">{resolveError}</p>
-          ) : (
-            <p className="muted">Reading your Google Maps link…</p>
-          )
-        ) : known ? (
-          <>
-            <p className="notice success">
-              <Check size={16} aria-hidden="true" /> “{known.name}” is your venue.
-            </p>
-            <ul className="plain venue-list">
-              <VenueRow venue={known} />
-            </ul>
-          </>
-        ) : typedName ? (
-          <p className="muted">
-            Your venue: <strong>{typedName}</strong>. Add its Google Maps link to save its exact location.
-          </p>
-        ) : (
-          <p className="muted">No venue yet — pick one on Google Maps and paste its link here.</p>
-        )}
-      </div>
+      <VenueStatus
+        pendingLink={pendingLink}
+        resolveError={resolveError}
+        known={known}
+        typedName={typedName}
+      />
 
       <ol className="lookup-steps venue-steps">
         <li>
