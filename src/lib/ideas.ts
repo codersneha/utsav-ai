@@ -133,6 +133,51 @@ function parseMenu(value: unknown, details: EventDetails) {
  * every dish must be a real dish from the tradition's menu, and all text is
  * cleaned. Returns the parts requested, or null if they are unusable.
  */
+const LOOK_COUNT = 3;
+
+const cleanLook = (o: Record<string, unknown>): DecorLook | null => {
+  const look = {
+    name: cleanText(o.name, 50),
+    palette: cleanPalette(o.palette),
+    decor: cleanList(o.decor, 4, ITEM_MAX),
+    why: cleanText(o.why, 160),
+  };
+  return look.name && look.palette.length > 0 && look.decor.length > 0 ? look : null;
+};
+
+/** Always three distinct looks: the model's, else its own décor idea, then current trends. */
+function parseLooks(raw: unknown, ceremonies: CeremonyIdea[], details: EventDetails): DecorLook[] {
+  const looks = cleanObjects(raw, LOOK_COUNT, cleanLook);
+  const own = ceremonies[0];
+  if (looks.length === 0 && own && own.palette.length > 0 && own.decor.length > 0) {
+    looks.push({ name: own.theme, palette: own.palette, decor: own.decor, why: 'Made for your event.' });
+  }
+  const extra = fallbackLooks(details).filter((f) => !looks.some((l) => l.name === f.name));
+  return [...looks, ...extra].slice(0, LOOK_COUNT);
+}
+
+type SectionParser = (obj: Record<string, unknown>, details: EventDetails) => Partial<Ideas> | null;
+
+/** Each section is checked on its own, so one can be regenerated without the others. */
+const SECTION_PARSERS: Record<IdeasSection, SectionParser> = {
+  decor: (obj, details) => {
+    const ceremonies = parseCeremonies(obj.ceremonies, details);
+    if (ceremonies.length === 0) return null;
+    return details.eventType === 'wedding'
+      ? { ceremonies }
+      : { ceremonies, looks: parseLooks(obj.looks, ceremonies, details) };
+  },
+  menu: (obj, details) => (Array.isArray(obj.menu) ? { menu: parseMenu(obj.menu, details) } : null),
+  extras: (obj) => {
+    const extras = {
+      summary: cleanText(obj.summary, 400),
+      activities: cleanList(obj.activities, 6, ITEM_MAX),
+      budgetTips: cleanList(obj.budgetTips, 6, ITEM_MAX),
+    };
+    return extras.activities.length === 0 && extras.budgetTips.length === 0 ? null : extras;
+  },
+};
+
 export function parseIdeas(
   raw: unknown,
   details: EventDetails,
@@ -140,38 +185,12 @@ export function parseIdeas(
 ): Partial<Ideas> | null {
   const obj = toObject(raw);
   if (!obj) return null;
+  const sections: IdeasSection[] = section ? [section] : ['decor', 'menu', 'extras'];
   const out: Partial<Ideas> = {};
-  if (!section || section === 'decor') {
-    out.ceremonies = parseCeremonies(obj.ceremonies, details);
-    if (out.ceremonies.length === 0) return null;
-    if (details.eventType !== 'wedding') {
-      // Always three distinct looks; any the model missed come from the trend list.
-      const looks = cleanObjects(obj.looks, 3, (o) => {
-        const look = {
-          name: cleanText(o.name, 50),
-          palette: cleanPalette(o.palette),
-          decor: cleanList(o.decor, 4, ITEM_MAX),
-          why: cleanText(o.why, 160),
-        };
-        return look.name && look.palette.length > 0 && look.decor.length > 0 ? look : null;
-      });
-      // Without looks from the model, its own décor idea leads, then the trends.
-      const own = out.ceremonies[0];
-      if (looks.length === 0 && own && own.palette.length > 0 && own.decor.length > 0)
-        looks.push({ name: own.theme, palette: own.palette, decor: own.decor, why: 'Made for your event.' });
-      const extra = fallbackLooks(details).filter((f) => !looks.some((l) => l.name === f.name));
-      out.looks = [...looks, ...extra].slice(0, 3);
-    }
-  }
-  if (!section || section === 'menu') {
-    if (!Array.isArray(obj.menu)) return null;
-    out.menu = parseMenu(obj.menu, details);
-  }
-  if (!section || section === 'extras') {
-    out.summary = cleanText(obj.summary, 400);
-    out.activities = cleanList(obj.activities, 6, ITEM_MAX);
-    out.budgetTips = cleanList(obj.budgetTips, 6, ITEM_MAX);
-    if (out.activities.length === 0 && out.budgetTips.length === 0) return null;
+  for (const s of sections) {
+    const part = SECTION_PARSERS[s](obj, details);
+    if (!part) return null;
+    Object.assign(out, part);
   }
   return out;
 }

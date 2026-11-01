@@ -34,29 +34,39 @@ export interface StepProps {
   errors: FieldErrors;
 }
 
-export function initialFormState(initial?: Partial<EventDetails>): FormState {
-  const tradition = initial?.tradition ?? 'modern';
+/** A blank form; ceremonies follow the chosen tradition. */
+const EMPTY_FORM: Omit<FormState, 'ceremonies'> = {
+  eventType: '',
+  title: '',
+  date: '',
+  city: '',
+  guests: '',
+  budget: '',
+  preferences: '',
+  priorities: [],
+  venueType: 'undecided',
+  ageGroup: 'mixed',
+  diets: [],
+  colors: '',
+  language: 'en',
+  tradition: 'modern',
+  venueName: '',
+  venuePreference: '',
+  wantsDecor: true,
+};
+
+/** The form for a saved plan (edit) or AI-extracted fields (create); anything missing starts blank. */
+export function initialFormState(initial: Partial<EventDetails> = {}): FormState {
+  const { guests, budget, ceremonies, ...rest } = initial;
+  const given = Object.fromEntries(
+    Object.entries(rest).filter(([key, value]) => key in EMPTY_FORM && value !== undefined),
+  ) as Partial<FormState>;
+  const form = { ...EMPTY_FORM, ...given };
   return {
-    eventType: initial?.eventType ?? '',
-    title: initial?.title ?? '',
-    date: initial?.date ?? '',
-    city: initial?.city ?? '',
-    guests: initial?.guests ? String(initial.guests) : '',
-    budget: initial?.budget ? String(initial.budget) : '',
-    preferences: initial?.preferences ?? '',
-    priorities: initial?.priorities ?? [],
-    venueType: initial?.venueType ?? 'undecided',
-    ageGroup: initial?.ageGroup ?? 'mixed',
-    diets: initial?.diets ?? [],
-    colors: initial?.colors ?? '',
-    language: initial?.language ?? 'en',
-    tradition,
-    ceremonies: initial?.ceremonies?.length
-      ? initial.ceremonies
-      : TRADITION_DATA[tradition].defaultCeremonies,
-    venueName: initial?.venueName ?? '',
-    venuePreference: initial?.venuePreference ?? '',
-    wantsDecor: initial?.wantsDecor ?? true,
+    ...form,
+    guests: guests ? String(guests) : '',
+    budget: budget ? String(budget) : '',
+    ceremonies: ceremonies?.length ? ceremonies : TRADITION_DATA[form.tradition].defaultCeremonies,
   };
 }
 

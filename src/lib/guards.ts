@@ -157,30 +157,26 @@ export const isVenue = (v: unknown): v is Venue =>
 
 const isCount2 = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 
+const MENU_SOURCES = [undefined, 'photos', 'text', 'estimate'];
+
+const isMenuItem = (i: unknown) => isObject(i) && isString(i.name) && isCount2(i.price);
+
+const isOrderLine = (l: unknown) =>
+  isObject(l) &&
+  isString(l.name) &&
+  MENU_CATEGORIES.includes(l.category as never) &&
+  typeof l.veg === 'boolean' &&
+  [l.price, l.serves, l.quantity, l.cost].every(isCount2);
+
 /** A party order from a restaurant menu, as returned by the API or stored in the browser. */
 export const isPartyOrder = (v: unknown): v is PartyOrder =>
   isObject(v) &&
-  (v.source === undefined || v.source === 'photos' || v.source === 'text' || v.source === 'estimate') &&
-  isCount2(v.itemsRead) &&
-  isCount2(v.pages) &&
-  Array.isArray(v.items) &&
-  v.items.every((i) => isObject(i) && isString(i.name) && isCount2(i.price)) &&
-  isCount2(v.total) &&
-  isCount2(v.perHead) &&
-  isCount2(v.guests) &&
-  isCount2(v.budget) &&
+  MENU_SOURCES.includes(v.source as string | undefined) &&
+  [v.itemsRead, v.pages, v.total, v.perHead, v.guests, v.budget].every(isCount2) &&
   typeof v.trimmed === 'boolean' &&
   isString(v.note) &&
+  Array.isArray(v.items) &&
+  v.items.every(isMenuItem) &&
   Array.isArray(v.lines) &&
   v.lines.length > 0 &&
-  v.lines.every(
-    (l) =>
-      isObject(l) &&
-      isString(l.name) &&
-      MENU_CATEGORIES.includes(l.category as never) &&
-      typeof l.veg === 'boolean' &&
-      isCount2(l.price) &&
-      isCount2(l.serves) &&
-      isCount2(l.quantity) &&
-      isCount2(l.cost),
-  );
+  v.lines.every(isOrderLine);

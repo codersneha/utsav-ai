@@ -65,6 +65,64 @@ export interface MoreGuests {
   steps: string[];
 }
 
+type People = MoreGuests['people'];
+type Cover = Pick<MoreGuests, 'contingency' | 'shortfall' | 'trims' | 'remaining'>;
+
+const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
+
+/** Extra servers, kitchen helpers, chairs and tables for the bigger crowd. */
+function extraPeople(planned: number, extra: number, served: boolean): People {
+  const total = planned + extra;
+  const more = (per: number) => Math.ceil(total / per) - Math.ceil(planned / per);
+  return {
+    servers: more(served ? GUEST_RULES.guestsPerServerSeated : GUEST_RULES.guestsPerServerBuffet),
+    helpers: more(GUEST_RULES.guestsPerKitchenHelper),
+    chairs: extra,
+    tables: more(GUEST_RULES.guestsPerTable),
+  };
+}
+
+/** Contingency pays first; each flexible category then gives a share, never more than a fifth of what it holds. */
+function coverCost(plan: EventPlan, cost: number): Cover {
+  const contingency = contingencyOf(plan);
+  const shortfall = Math.max(0, cost - contingency);
+  const givers = plan.budget.lines.filter((l) => TRIMMABLE.has(l.id) && l.amount > 0);
+  const room = givers.reduce((sum, l) => sum + l.amount * MAX_TRIM, 0);
+  const take = Math.min(shortfall, room);
+  const trims =
+    take > 0
+      ? givers
+          .map((l) => ({ label: l.label, amount: Math.round((take * l.amount * MAX_TRIM) / room) }))
+          .filter((t) => t.amount > 0)
+      : [];
+  const remaining = Math.max(0, shortfall - trims.reduce((sum, t) => sum + t.amount, 0));
+  return { contingency, shortfall, trims, remaining };
+}
+
+/** How the extra cost is met, in one sentence. */
+function moneyStep(cost: number, { contingency, shortfall, trims, remaining }: Cover): string {
+  if (shortfall === 0) {
+    return `Your contingency of ${formatInr(contingency)} covers the ${formatInr(cost)}. Keep the rest for surprises.`;
+  }
+  const covered = `Contingency covers ${formatInr(Math.min(cost, contingency))}.`;
+  if (trims.length === 0) {
+    return `${covered} Find the other ${formatInr(shortfall)} from the family, or trim the guest list.`;
+  }
+  const cuts = trims.map((t) => `${t.label} ${formatInr(t.amount)}`).join(', ');
+  const rest = remaining > 0 ? `, and find ${formatInr(remaining)} more` : '';
+  return `${covered} Cover the other ${formatInr(shortfall)} by trimming ${cuts}${rest}.`;
+}
+
+function staffStep(people: People): string {
+  const staff = [
+    people.servers > 0 && `${people.servers} more server${people.servers > 1 ? 's' : ''}`,
+    people.helpers > 0 && plural(people.helpers, 'kitchen helper'),
+    `${people.chairs} chairs`,
+    people.tables > 0 && plural(people.tables, 'table'),
+  ].filter((x): x is string => Boolean(x));
+  return `Arrange ${staff.join(', ')}. Service staff is usually in the per-plate price — confirm it.`;
+}
+
 /** What happens if `extra` more people turn up than planned: plates, people, money and where it comes from. */
 export function moreGuests(
   plan: EventPlan,
@@ -80,52 +138,18 @@ export function moreGuests(
   const foodCost = platesToOrder * foodPerPlate;
   const otherCosts = extras.map((e) => ({ label: e.label, amount: e.perGuest * extra }));
   const cost = foodCost + otherCosts.reduce((sum, o) => sum + o.amount, 0);
+  const people = extraPeople(details.guests, extra, served);
+  const cover = coverCost(plan, cost);
+  const revenue = opts.revenuePerGuest ?? 0;
+  const net = revenue > 0 ? newTotal * revenue - (budget.total + cost) : undefined;
 
-  const perServer = served ? GUEST_RULES.guestsPerServerSeated : GUEST_RULES.guestsPerServerBuffet;
-  const more = (per: number) => Math.ceil(newTotal / per) - Math.ceil(details.guests / per);
-  const people = {
-    servers: more(perServer),
-    helpers: more(GUEST_RULES.guestsPerKitchenHelper),
-    chairs: extra,
-    tables: more(GUEST_RULES.guestsPerTable),
-  };
-
-  const contingency = contingencyOf(plan);
-  const shortfall = Math.max(0, cost - contingency);
-  // Ask each flexible category for a share of the gap, never more than a fifth of what it holds.
-  const givers = budget.lines.filter((l) => TRIMMABLE.has(l.id) && l.amount > 0);
-  const room = givers.reduce((sum, l) => sum + l.amount * MAX_TRIM, 0);
-  const take = Math.min(shortfall, room);
-  const trims =
-    take > 0
-      ? givers
-          .map((l) => ({ label: l.label, amount: Math.round((take * l.amount * MAX_TRIM) / room) }))
-          .filter((t) => t.amount > 0)
-      : [];
-  const remaining = Math.max(0, shortfall - trims.reduce((sum, t) => sum + t.amount, 0));
-  const net =
-    opts.revenuePerGuest && opts.revenuePerGuest > 0
-      ? newTotal * opts.revenuePerGuest - (budget.total + cost)
-      : undefined;
-
-  const list = (items: string[]) => items.join(', ');
-  const staff = [
-    people.servers > 0 && `${people.servers} more server${people.servers > 1 ? 's' : ''}`,
-    people.helpers > 0 && `${people.helpers} kitchen helper${people.helpers > 1 ? 's' : ''}`,
-    `${people.chairs} chairs`,
-    people.tables > 0 && `${people.tables} table${people.tables > 1 ? 's' : ''}`,
-  ].filter((x): x is string => Boolean(x));
   const steps = [
     `Tell the caterer now: ${platesToOrder} extra plates (${extra} guests + ${bufferPlates} buffer, about ${kg(platesToOrder)} kg of food). Get the extra-plate price in writing.`,
-    `Arrange ${list(staff)}. Service staff is usually in the per-plate price — confirm it.`,
+    staffStep(people),
     served
       ? 'Plan an extra seated batch: elders and VIPs first, with a family member managing each batch.'
       : 'Add a second buffet line so queues stay short.',
-    shortfall === 0
-      ? `Your contingency of ${formatInr(contingency)} covers the ${formatInr(cost)}. Keep the rest for surprises.`
-      : trims.length > 0
-        ? `Contingency covers ${formatInr(Math.min(cost, contingency))}. Cover the other ${formatInr(shortfall)} by trimming ${list(trims.map((t) => `${t.label} ${formatInr(t.amount)}`))}${remaining > 0 ? `, and find ${formatInr(remaining)} more` : ''}.`
-        : `Contingency covers ${formatInr(Math.min(cost, contingency))}. Find the other ${formatInr(shortfall)} from the family, or trim the guest list.`,
+    moneyStep(cost, cover),
     `Ask the venue for its maximum capacity and fire-safety limit for ${newTotal} people, and keep spare chairs on standby.`,
     'Keep a quick standby menu (dal, rice, one curry) the caterer can make within an hour, and order 10% extra return gifts and water.',
   ];
@@ -139,10 +163,7 @@ export function moreGuests(
     otherCosts,
     cost,
     people,
-    contingency,
-    shortfall,
-    trims,
-    remaining,
+    ...cover,
     ...(net !== undefined ? { net } : {}),
     steps,
   };

@@ -76,7 +76,8 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 
 - `src/lib/`: pure, framework-free domain logic — budget & trade-offs, timeline & dependencies, checklist & quotes, change report, validation, prompts, AI-output parsing, calendar export.
 - `src/hooks/`: `usePlanner` exposes every plan action; it is built from `usePlanStore` (everything saved in the browser, each value checked when read back), `useAiResource` (one cancellable AI request with its loading state) and `useVenueLink`. Components stay presentational.
-- `src/lib/culture/`: the tradition knowledge base (functions, palettes, décor, courses, dishes with per-plate costs); `validateMenu` keeps the AI inside it.
+- `src/lib/culture/`: the tradition knowledge base, one file per tradition in `traditions/` (functions, palettes, décor, courses, dishes with per-plate costs) with shared building blocks in `traditions/model.ts`; `validateMenu` keeps the AI inside it.
+- `src/styles/`: one stylesheet per area of the app, imported in cascade order from `styles/index.css`.
 - `src/server/`: a pure `handleGenerate(Request) → Response` that only orchestrates — `jobs.ts` turns the untrusted body into a typed job (one small parser per mode), `runJob.ts` runs it against Gemini (one runner per mode), `venueRoute.ts` and `mapsLink.ts` read a venue from a pasted Google Maps link, and `http.ts` holds the shared response helpers. Around them: the Gemini REST client (timeouts, retry, model fallback, image input), the rate limiter and the LRU cache. Seven modes: `ideas` (whole plan or one section), `logistics`, `ask`, `extract`, `vision`, `menuScan`, `venues`.
 - `api/generate.ts`: a 5-line Vercel Function entry. The **API key stays on the server**.
 - `src/components/`: accessible React UI, one component per card or section. The planner form lives in `components/plannerForm/` (one file per step, shared field components, a single form-state object). The plan view is lazy-loaded and describes its tabs as data.
@@ -111,7 +112,7 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 
 ### ✅ Testing
 
-- **291 tests across 32 files** (Vitest + Testing Library), with about **96% line and 84% branch coverage** (`npm run coverage`).
+- **277 tests across 32 files** (Vitest + Testing Library), with about **96% line and 86% branch coverage** (`npm run coverage`).
 - Unit tests: budget maths (exact sums, priority boosts, user overrides, guest impact, trade-offs that really fix the plan), timeline (compression, priorities, dependencies, slippage alerts, custom tasks), checklist & quote summaries, the change report (including the explainer's "50 more guests, smaller budget, two weeks earlier" case), validation, prompts, AI-output parsing, storage guards, calendar export, rate limiter and cache.
 - Culture tests pin the facts: the Bengali wedding is served in the right course order and never as a buffet, vegetarian-only menus have no fish or meat, a reception-only plan has no haldi, invented dishes are dropped, and Jain guests always get a safe choice.
 - Budget and planning tests: menus get richer with the food budget and never drop must-have dishes, AI menus that overspend are trimmed, dishes stay in serving order, the guest ledger counts and weights replies (and its CSV export neutralises spreadsheet formulas), what-if costs match the plan, and amounts like “20 lakh” or “1.5 crore” are read correctly.
@@ -133,7 +134,8 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 
 ### 🧹 Code quality
 
-- TypeScript `strict`, ESLint (typescript-eslint, react-hooks, **jsx-a11y strict**) and Prettier.
+- TypeScript `strict`, ESLint (typescript-eslint, react-hooks, **jsx-a11y strict**) and Prettier. ESLint also enforces size limits as errors: cyclomatic complexity ≤ 15, nesting depth ≤ 4, at most 6 parameters.
+- No dead code: unused files, exports and dependencies are checked with `knip`.
 - Small, single-purpose modules and functions. Rule-based logic is written as data plus small functions: next steps are an ordered list of rules, the change report is a list of describers, AI-extracted fields are checked by a table of field readers, and the plan's tabs are a list of definitions.
 - One place for each rule: `budgetFor(details)` is the only way a plan's budget is built, and `validateEventDetails` guards both the form and the API.
 - Pure functions are separated from UI and I/O, and side effects are injected (`fetchImpl`, `now`, `limiter`) for testability.

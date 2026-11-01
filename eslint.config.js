@@ -15,6 +15,11 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'no-control-regex': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // Keep functions small enough to read in one go.
+      complexity: ['error', 15],
+      'max-depth': ['error', 4],
+      'max-params': ['error', 6],
+      'max-nested-callbacks': ['error', 4],
     },
   },
 );

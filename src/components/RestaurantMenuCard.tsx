@@ -265,6 +265,58 @@ function OrderView({ order, place }: { order: PartyOrder; place: string }) {
   );
 }
 
+function MenuIntro({
+  venue,
+  place,
+  guests,
+  budget,
+}: {
+  venue: string;
+  place: string;
+  guests: number;
+  budget: number;
+}) {
+  return (
+    <>
+      <h4 id="restaurant-menu-heading" className="card-title">
+        <span className="icon-badge gold" aria-hidden="true">
+          <ScanLine size={20} />
+        </span>
+        {venue ? `Party order from ${venue}’s menu` : `Party order from the ${place}’s menu`}
+      </h4>
+      <p className="muted small">
+        {venue
+          ? `${venue} serves the food, so we don’t invent a menu. Add its menu to get a custom order for ${guests} guests within your food budget of ${formatInr(budget)}.`
+          : `A ${place} serves its own food, so we don’t invent a menu. Choose your ${place} in the Venue card (Vendors tab) to get an order from its real menu — or type a menu, or let us estimate one from typical prices. Food budget: ${formatInr(budget)} for ${guests} guests.`}
+      </p>
+    </>
+  );
+}
+
+function EstimateBox({
+  place,
+  city,
+  busy,
+  onEstimate,
+}: {
+  place: string;
+  city: string;
+  busy: boolean;
+  onEstimate: () => void;
+}) {
+  return (
+    <div className="menu-estimate">
+      <p className="hint">
+        We’ll suggest a party order from typical {place} dishes and prices in {city}. It’s a starting point
+        for budgeting — your {place}’s own menu will differ.
+      </p>
+      <button type="button" className="btn primary" disabled={busy} onClick={onEstimate}>
+        <Sparkles size={16} aria-hidden="true" /> {busy ? 'Estimating…' : 'Estimate an order'}
+      </button>
+    </div>
+  );
+}
+
 /**
  * At a restaurant or café the venue's own menu is the menu, so no menu is
  * invented here. With a venue chosen, its menu photos (or pasted text) give a
@@ -322,17 +374,7 @@ export function RestaurantMenuCard({ details, catering }: Props) {
 
   return (
     <section className="card restaurant-menu" aria-labelledby="restaurant-menu-heading">
-      <h4 id="restaurant-menu-heading" className="card-title">
-        <span className="icon-badge gold" aria-hidden="true">
-          <ScanLine size={20} />
-        </span>
-        {venue ? `Party order from ${venue}’s menu` : `Party order from the ${place}’s menu`}
-      </h4>
-      <p className="muted small">
-        {venue
-          ? `${venue} serves the food, so we don’t invent a menu. Add its menu to get a custom order for ${details.guests} guests within your food budget of ${formatInr(budget)}.`
-          : `A ${place} serves its own food, so we don’t invent a menu. Choose your ${place} in the Venue card (Vendors tab) to get an order from its real menu — or type a menu, or let us estimate one from typical prices. Food budget: ${formatInr(budget)} for ${details.guests} guests.`}
-      </p>
+      <MenuIntro venue={venue} place={place} guests={details.guests} budget={budget} />
 
       <ModeTabs modes={modes} mode={mode} onPick={pick} />
 
@@ -354,20 +396,12 @@ export function RestaurantMenuCard({ details, catering }: Props) {
         />
       )}
       {mode === 'estimate' && (
-        <div className="menu-estimate">
-          <p className="hint">
-            We’ll suggest a party order from typical {place} dishes and prices in {details.city}. It’s a
-            starting point for budgeting — your {place}’s own menu will differ.
-          </p>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={busy}
-            onClick={() => void build({ source: 'estimate' }, 0)}
-          >
-            <Sparkles size={16} aria-hidden="true" /> {busy ? 'Estimating…' : 'Estimate an order'}
-          </button>
-        </div>
+        <EstimateBox
+          place={place}
+          city={details.city}
+          busy={busy}
+          onEstimate={() => void build({ source: 'estimate' }, 0)}
+        />
       )}
 
       <div aria-live="polite">
