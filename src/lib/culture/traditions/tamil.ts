@@ -1,0 +1,161 @@
+import {
+  type Tradition,
+  v,
+  nv,
+  GOLD,
+  MARIGOLD,
+  TURMERIC,
+  LEAF,
+  JASMINE,
+  KUMKUM,
+  mehendi,
+  reception,
+  MOCKTAILS,
+} from './model.js';
+
+export const tamil: Tradition = {
+  id: 'tamil',
+  label: 'Tamil',
+  service:
+    'The wedding lunch (kalyana saapadu) is served on a banana leaf to seated guests in a set order: vegetables, vadai and appalam on the leaf, payasam, then rice with paruppu and ghee, sambar, kuzhambu, rasam and finally curd. Vegetarian for most Hindu weddings.',
+  courses: [
+    {
+      id: 'tiffin',
+      name: 'Wedding-morning tiffin',
+      pick: [0, 3],
+      note: 'Served before or after the muhurtham',
+      dishes: [
+        v('Medu vadai', 30),
+        v('Rava kesari', 30, true),
+        v('Ven pongal', 35),
+        v('Idli with chutney and sambar', 40),
+      ],
+    },
+    {
+      id: 'leaf',
+      name: 'On the leaf',
+      pick: [4, 7],
+      party: true,
+      dishes: [
+        v('Appalam', 5, true),
+        v('Pickle', 5, true),
+        v('Banana chips', 10, true),
+        v('Pachadi', 20, true),
+        v('Kosambari', 20, true),
+        v('Poriyal', 25, true),
+        v('Kootu', 25, true),
+        v('Medu vadai', 30),
+      ],
+    },
+    {
+      id: 'payasam',
+      name: 'Payasam & sweet',
+      pick: [1, 2],
+      note: 'Served in the middle of the meal',
+      party: true,
+      dishes: [
+        v('Semiya payasam', 30, true),
+        v('Jangiri', 30, true),
+        v('Paruppu payasam', 35, true),
+        v('Sakkarai pongal', 35, true),
+        v('Paal payasam', 40, true),
+      ],
+    },
+    {
+      id: 'rice',
+      name: 'Rice courses, in order',
+      pick: [3, 5],
+      dishes: [
+        v('Rice with paruppu and ghee', 30, true),
+        v('Sambar', 25),
+        v('Vatha kuzhambu or mor kuzhambu', 25, true),
+        v('Rasam', 15, true),
+        v('Curd rice with moru', 20, true),
+      ],
+    },
+    {
+      id: 'reception-dinner',
+      name: 'Reception dinner',
+      pick: [0, 2],
+      note: 'At the reception, for families who serve non-vegetarian food',
+      dishes: [nv('Chettinad chicken', 170), nv('Chicken biryani', 180), nv('Mutton chukka', 250)],
+    },
+    {
+      id: 'finish',
+      name: 'To finish',
+      pick: [1, 2],
+      party: true,
+      dishes: [v('Banana', 10, true), v('Beeda (paan)', 20, true), v('Filter coffee', 25, true)],
+    },
+    {
+      id: 'drinks',
+      name: 'Drinks',
+      pick: [0, 1],
+      party: true,
+      dishes: [v('Nannari sarbath', 25, true), v('Rose milk', 30, true), MOCKTAILS()],
+    },
+  ],
+  ceremonies: [
+    mehendi('A newer addition to many Tamil weddings.'),
+    {
+      id: 'nichayathartham',
+      name: 'Nichayathartham',
+      when: 'Often the evening before the wedding',
+      about:
+        'The formal engagement: the families exchange thamboolam trays and the wedding invitation (lagna patrikai) is read out.',
+      palette: [KUMKUM, GOLD, JASMINE],
+      decor: [
+        'Brass thamboolam trays with fruit, betel leaves and flowers',
+        'A kolam at the entrance',
+        'Jasmine and marigold strings',
+      ],
+      food: 'Dinner — often the reception dinner the same evening.',
+    },
+    reception(
+      'Reception',
+      'Usually the evening before the muhurtham; guests greet the couple and stay for dinner.',
+    ),
+    {
+      id: 'kashi-yatra',
+      name: 'Kashi Yatra & Oonjal',
+      when: 'Morning of the wedding',
+      about:
+        'The groom sets off for Kashi with an umbrella and fan until the bride’s father persuades him to marry; then the couple sits on a swing (oonjal) while women sing.',
+      palette: [KUMKUM, GOLD, LEAF],
+      decor: [
+        'A decorated wooden oonjal (swing)',
+        'A silk umbrella, hand fan and walking stick for the groom',
+        'Coloured rice balls and lamps for the oonjal ritual',
+      ],
+      food: 'The wedding-morning tiffin.',
+    },
+    {
+      id: 'muhurtham',
+      name: 'Muhurtham',
+      when: 'Early morning, at the muhurtham',
+      about:
+        'Kanyadanam, then the groom ties the thali at the auspicious moment to the sound of the nadaswaram, followed by the saptapadi.',
+      palette: [KUMKUM, GOLD, JASMINE],
+      decor: [
+        'A manavarai (stage) with banana trees and sugarcane',
+        'Jasmine and rose garlands around brass kuthuvilakku lamps',
+        'Kolam and a mango-leaf thoranam',
+      ],
+      food: 'The kalyana saapadu on banana leaves — see the menu.',
+    },
+    {
+      id: 'nalangu',
+      name: 'Nalangu',
+      when: 'The day before or after the muhurtham',
+      about: 'A playful ritual of turmeric, sandal and games between the couple and families.',
+      palette: [TURMERIC, MARIGOLD, LEAF],
+      decor: [
+        'Jasmine strings and banana-leaf accents',
+        'Brass kuthuvilakku lamps',
+        'A kolam and a low seat for the couple',
+      ],
+      food: 'Snacks and filter coffee.',
+    },
+  ],
+  defaultCeremonies: ['nichayathartham', 'reception', 'kashi-yatra', 'muhurtham'],
+};

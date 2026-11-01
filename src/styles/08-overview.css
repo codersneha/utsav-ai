@@ -1,0 +1,141 @@
+/* ---------- Overview dashboard ------------------------------------------- */
+
+.dashboard {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.dashboard > * {
+  grid-column: span 6;
+}
+
+.dashboard > .span-4 {
+  grid-column: span 4;
+}
+
+.dashboard > .span-8 {
+  grid-column: span 8;
+}
+
+.dashboard > .span-12 {
+  grid-column: span 12;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  margin-bottom: 0.9rem;
+}
+
+.rings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.ring {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ring svg text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  fill: var(--text);
+}
+
+.donut-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.donut text {
+  font-family: var(--font-display);
+  fill: var(--text);
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.legend li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.legend .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.up-next {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.up-next li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.date-chip {
+  display: grid;
+  place-items: center;
+  min-width: 52px;
+  padding: 0.3rem 0.4rem;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.date-chip strong {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+}
+
+.spotlight {
+  background: radial-gradient(400px 200px at 100% 0%, var(--accent-soft), transparent 70%), var(--surface);
+}
+
+.spotlight h4 {
+  font-size: 1.4rem;
+  color: var(--primary);
+}
+
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}

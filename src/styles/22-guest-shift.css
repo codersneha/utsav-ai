@@ -1,0 +1,73 @@
+/* Guest-count simulator */
+.guest-shift .segmented {
+  margin: 0.5rem 0 0.75rem;
+}
+
+.shift-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.shift-inputs .inline-field {
+  min-width: 12rem;
+}
+
+.shift-more {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.shift-more summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.plate-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--surface-2);
+  margin-top: 0.75rem;
+}
+
+.plate-bar .eaten {
+  background: var(--teal);
+}
+
+.plate-bar .wasted {
+  background: var(--danger);
+}
+
+.shift-tiles {
+  margin: 0.5rem 0 1rem;
+}
+
+.shift-tiles .tile.bad dd {
+  color: var(--danger);
+}
+
+.shift-tiles .tile.good dd {
+  color: var(--teal);
+}
+
+.shift-table th[scope='col']:not(:first-child),
+.shift-table td {
+  text-align: right;
+}
+
+.guest-shift .col-title {
+  margin: 1rem 0 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .shift-inputs .inline-field {
+    min-width: 0;
+    width: 100%;
+  }
+}

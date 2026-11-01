@@ -1,0 +1,249 @@
+/* ---------- Budget split ------------------------------------------------- */
+
+.budget {
+  display: grid;
+  gap: 1rem;
+}
+
+.split-card {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.split-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.split-bar > span {
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+.split-bar > span.unallocated {
+  background: repeating-linear-gradient(45deg, var(--border) 0 6px, transparent 6px 12px);
+}
+
+.split-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.split-status.ok {
+  color: var(--teal);
+}
+
+.unallocated-card label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.unallocated-card p {
+  margin: 0;
+}
+
+.split-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.5rem 1rem;
+}
+
+.split-head h4 {
+  margin: 0;
+}
+
+.split-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.split-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(140px, 1.6fr) auto;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.split-row:last-child {
+  border-bottom: none;
+}
+
+.split-row.locked {
+  background: var(--surface-2);
+}
+
+.split-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+
+.split-label .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.split-label .muted {
+  flex-basis: 100%;
+}
+
+.split-slider {
+  width: 100%;
+  min-height: 44px;
+}
+
+.split-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.split-controls .amount-input {
+  flex: 0 1 8.5rem;
+  width: 8.5rem;
+  min-width: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.shift-toast-wrap {
+  position: sticky;
+  bottom: 1rem;
+  z-index: 5;
+}
+
+.shift-toast {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin: 0 auto;
+  max-width: 760px;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+@media (max-width: 760px) {
+  .split-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .split-row {
+    gap: 0.4rem;
+  }
+
+  .split-controls {
+    justify-content: flex-end;
+  }
+}
+
+.restaurant-menu {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.menu-steps {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.menu-upload {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.menu-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.order-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-table th,
+.order-table td {
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.order-table td:nth-child(n + 2) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.order-table thead th {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.order-table tbody th {
+  font-weight: 600;
+}
+
+.order-table .order-group th {
+  padding-top: 0.9rem;
+  font-family: var(--font-display);
+  color: var(--primary);
+}
+
+.typical-menu > summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}

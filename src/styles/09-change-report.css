@@ -1,0 +1,19 @@
+/* ---------- Change report & banners -------------------------------------- */
+
+.change {
+  border-left: 5px solid var(--accent);
+}
+
+.change ul {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+}
+
+.banner-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 5px solid var(--teal);
+}

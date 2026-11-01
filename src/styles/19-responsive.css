@@ -1,0 +1,185 @@
+/* ---------- Responsive & motion ----------------------------------------- */
+
+@media (max-width: 900px) {
+  .hero,
+  .planner-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .preview {
+    transform: none;
+  }
+
+  .live-preview {
+    position: static;
+  }
+
+  .dashboard > *,
+  .dashboard > .span-4,
+  .dashboard > .span-8 {
+    grid-column: span 12;
+  }
+}
+
+@media (max-width: 600px) {
+  .tagline {
+    display: none;
+  }
+
+  .milestone {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+
+  .ask-row {
+    flex-direction: column;
+  }
+
+  .donut-wrap {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+
+  .legend {
+    width: 100%;
+  }
+
+  .countdown-badge {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    width: auto;
+    height: auto;
+    padding: 0.35rem 0.9rem;
+    border-radius: 999px;
+    margin: 0 0 1rem;
+  }
+
+  .countdown-badge strong {
+    display: inline;
+    font-size: 1.4rem;
+  }
+
+  .event-hero .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .event-hero .actions .btn {
+    min-height: 44px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .budget-table thead th:nth-child(2),
+  .budget-table td:nth-child(2) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn,
+  .chip,
+  .choice,
+  .tab {
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      box-shadow 0.18s ease;
+  }
+
+  .ring .value,
+  .donut circle {
+    transition: stroke-dasharray 0.6s ease;
+  }
+
+  .tabpanel > * {
+    animation: rise 0.28s ease both;
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .no-print,
+  .site-header,
+  .site-footer,
+  .skip-link,
+  .plan > :not(.print-sheet) {
+    display: none !important;
+  }
+
+  .print-sheet {
+    display: block;
+    font-family: var(--font-body);
+    font-size: 11pt;
+    color: #000;
+  }
+
+  .print-sheet h1 {
+    font-family: var(--font-display);
+    font-size: 22pt;
+    margin: 0.1rem 0 0.3rem;
+  }
+
+  .print-sheet h2 {
+    font-family: var(--font-display);
+    font-size: 14pt;
+    margin: 1.1rem 0 0.4rem;
+    border-bottom: 1px solid #999;
+    padding-bottom: 0.15rem;
+  }
+
+  .print-brand {
+    font-size: 9pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0;
+  }
+
+  .print-sheet table {
+    width: 100%;
+    border-collapse: collapse;
+    break-inside: auto;
+  }
+
+  .print-sheet tr {
+    break-inside: avoid;
+  }
+
+  .print-sheet th,
+  .print-sheet td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.25rem 0.4rem;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .print-sheet footer {
+    margin-top: 1.2rem;
+    font-size: 9pt;
+    color: #555;
+  }
+}
+
+.menu-card .courses {
+  margin-top: 1.1rem;
+}

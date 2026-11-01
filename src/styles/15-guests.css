@@ -1,0 +1,180 @@
+/* ---------- Guests ------------------------------------------------------- */
+
+.guests,
+.whatif {
+  display: grid;
+  gap: 1rem;
+}
+
+.guest-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+}
+
+.guest-stats > div {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.guest-stats dt {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guest-stats dd.small {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.guest-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.guest-gap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.guest-gap p {
+  margin: 0;
+}
+
+.add-guest-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 2fr) minmax(140px, 2fr) minmax(130px, 1.4fr) 90px 90px auto auto;
+  align-items: end;
+  gap: 0.7rem;
+}
+
+.add-guest .field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.add-guest label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.vip-check {
+  align-self: center;
+  white-space: nowrap;
+}
+
+.guest-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.guest-tools input[type='search'] {
+  max-width: 280px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.guest-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.guest-table th,
+.guest-table td {
+  padding: 0.55rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.guest-table thead th {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guest-table tbody th {
+  font-weight: 600;
+}
+
+.guest-table tbody th .muted {
+  display: block;
+  font-weight: 400;
+}
+
+.guest-table tr.vip {
+  background: var(--accent-soft);
+}
+
+.guest-table tfoot th,
+.guest-table tfoot td {
+  font-weight: 700;
+  border-bottom: none;
+}
+
+.guest-table input.count {
+  width: 4.5rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.guest-table select {
+  width: auto;
+  padding: 0.35rem 0.5rem;
+}
+
+.guest-table input[type='checkbox'] {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--primary);
+}
+
+.star {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.star.on {
+  color: var(--accent);
+}
+
+.star:hover {
+  background: var(--surface-2);
+}
+
+.rsvp-confirmed {
+  border-color: var(--teal);
+}
+
+.rsvp-declined {
+  border-color: var(--danger);
+}

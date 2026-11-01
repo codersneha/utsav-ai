@@ -1,0 +1,167 @@
+/* ==========================================================================
+   UtsavAI design system — warm, festive and calm.
+   Palette: ivory paper, rani pink, marigold and peacock teal.
+   Type: Fraunces (display) + Plus Jakarta Sans (text), self-hosted.
+   ========================================================================== */
+
+:root {
+  --bg: #fbf6ef;
+  --bg-glow: #fdebd3;
+  --surface: #ffffff;
+  --surface-2: #f7efe5;
+  --text: #2b1d24;
+  --muted: #6b5560;
+  --border: #ecdfd2;
+  --border-strong: #8c767d;
+  --primary: #a3195b;
+  --primary-hover: #86124a;
+  --primary-text: #ffffff;
+  --primary-soft: #fbe3ec;
+  --accent: #e8a33d;
+  --accent-soft: #fdefd6;
+  --teal: #1f7a68;
+  --teal-soft: #dcf1ec;
+  --danger: #b42318;
+  --danger-soft: #fdeceb;
+  --focus: #1d4ed8;
+  --radius: 20px;
+  --radius-sm: 12px;
+  --shadow: 0 1px 2px rgb(43 29 36 / 5%), 0 8px 24px rgb(43 29 36 / 6%);
+  --shadow-lg: 0 2px 4px rgb(43 29 36 / 5%), 0 18px 48px rgb(43 29 36 / 10%);
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-body: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --wedding: linear-gradient(135deg, #8f1450 0%, #c2306c 55%, #c9781c 100%);
+  --birthday: linear-gradient(135deg, #17604f 0%, #23806c 50%, #b9741c 100%);
+  --community: linear-gradient(135deg, #8c3f08 0%, #b3611a 50%, #8f1450 100%);
+  --corporate: linear-gradient(135deg, #1e3a5f 0%, #2c5282 55%, #17604f 100%);
+  color-scheme: light;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #160f15;
+    --bg-glow: #2a1622;
+    --surface: #211720;
+    --surface-2: #2a1e29;
+    --text: #f6ede7;
+    --muted: #cdb9c0;
+    --border: #3d2d39;
+    --border-strong: #8f7a85;
+    --primary: #f28cb7;
+    --primary-hover: #f7aecc;
+    --primary-text: #2a0d1a;
+    --primary-soft: #3d1a2c;
+    --accent: #f4bb5f;
+    --accent-soft: #3a2a14;
+    --teal: #6fd0ba;
+    --teal-soft: #173a33;
+    --danger: #ff8f86;
+    --danger-soft: #3b1714;
+    --focus: #93c5fd;
+    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 25%);
+    --shadow-lg: 0 2px 4px rgb(0 0 0 / 30%), 0 18px 48px rgb(0 0 0 / 35%);
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 85% -10%, var(--bg-glow), transparent 70%),
+    radial-gradient(700px 400px at -10% 10%, var(--primary-soft), transparent 70%), var(--bg);
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5rem;
+}
+
+h3 {
+  font-size: 1.35rem;
+}
+
+h4 {
+  font-size: 1.1rem;
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+a {
+  color: var(--primary);
+  text-underline-offset: 3px;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+svg {
+  flex-shrink: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -4rem;
+  background: var(--primary);
+  color: var(--primary-text);
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-sm);
+  z-index: 20;
+  font-weight: 700;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+.container {
+  width: min(1120px, 100% - 2rem);
+  margin-inline: auto;
+}
+
+.muted,
+.hint {
+  color: var(--muted);
+}
+
+.hint {
+  font-size: 0.875rem;
+  margin: 0.3rem 0 0;
+}

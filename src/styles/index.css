@@ -1,0 +1,23 @@
+/* The stylesheet, one file per area of the app, in cascade order. */
+@import './01-base.css';
+@import './02-header.css';
+@import './03-controls.css';
+@import './04-cards.css';
+@import './05-landing.css';
+@import './06-form.css';
+@import './07-plan-header.css';
+@import './08-overview.css';
+@import './09-change-report.css';
+@import './10-ideas.css';
+@import './11-budget.css';
+@import './12-timeline.css';
+@import './13-vendors.css';
+@import './14-budget-split.css';
+@import './15-guests.css';
+@import './16-what-if.css';
+@import './17-assistant.css';
+@import './18-ideas-details.css';
+@import './19-responsive.css';
+@import './20-decor-looks.css';
+@import './21-restaurant-menu.css';
+@import './22-guest-shift.css';

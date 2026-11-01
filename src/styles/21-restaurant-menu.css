@@ -1,0 +1,81 @@
+/* How to add a restaurant's menu */
+.segmented {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  margin: 0.75rem 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.4rem 0.9rem;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segment.active {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.segment:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.menu-text {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.menu-text .btn {
+  justify-self: start;
+}
+
+.menu-estimate {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .segmented {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .segment {
+    justify-content: center;
+  }
+}
+
+.lookup-steps {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.google-best {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.75rem;
+}
