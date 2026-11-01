@@ -51,6 +51,62 @@ export const EXTRACT_RESPONSE_SCHEMA = {
 const PLACEHOLDER = /^(not (specified|mentioned|provided|given)|unknown|none|n\/?a|-+)$/i;
 const real = (text: string) => (PLACEHOLDER.test(text.trim()) ? '' : text);
 
+type Reader<K extends keyof EventDetails> = (value: unknown, today: string) => EventDetails[K] | undefined;
+
+/** Real text (not a placeholder like "not specified") of at least `min` characters. */
+const textOf =
+  (max: number, min = 1) =>
+  (value: unknown): string | undefined => {
+    const text = real(cleanText(value, max));
+    return text.length >= min ? text : undefined;
+  };
+
+const intIn =
+  (min: number, max: number) =>
+  (value: unknown): number | undefined => {
+    const n = toInt(value);
+    return n >= min && n <= max ? n : undefined;
+  };
+
+/** An allowed value, skipping the default (a default tells the user nothing). */
+const oneOf =
+  <T>(guard: (v: unknown) => v is T, skip?: T) =>
+  (value: unknown): T | undefined =>
+    guard(value) && value !== skip ? value : undefined;
+
+const listOf =
+  <T>(guard: (v: unknown) => v is T, max: number) =>
+  (value: unknown): T[] | undefined => {
+    const list = pickAllowed(value, guard, max);
+    return list.length > 0 ? list : undefined;
+  };
+
+/** A real calendar date between today and the furthest date a plan allows. */
+const plannableDate = (value: unknown, today: string): string | undefined => {
+  if (typeof value !== 'string' || Number.isNaN(parseIsoDate(value))) return undefined;
+  const ahead = daysBetween(today, value);
+  return ahead >= 0 && ahead <= LIMITS.maxDaysAhead ? value : undefined;
+};
+
+/** How each extracted field is checked; a field that fails is left out. */
+const READERS: { [K in keyof EventDetails]?: Reader<K> } = {
+  eventType: oneOf(isEventType),
+  title: textOf(LIMITS.titleMax),
+  date: plannableDate,
+  city: textOf(LIMITS.cityMax, 2),
+  guests: intIn(LIMITS.guestsMin, LIMITS.guestsMax),
+  budget: intIn(LIMITS.budgetMin, LIMITS.budgetMax),
+  preferences: textOf(LIMITS.preferencesMax),
+  priorities: listOf(isPriority, 2),
+  venueType: oneOf(isVenueType, 'undecided'),
+  diets: listOf(isDiet, DIETS.length),
+  ageGroup: oneOf(isAgeGroup, 'mixed'),
+  colors: textOf(LIMITS.colorsMax),
+  tradition: oneOf(isTradition, 'modern'),
+  venueName: textOf(LIMITS.venueMax, 2),
+  venuePreference: textOf(LIMITS.venueMax, 3),
+};
+
 /**
  * Validates extracted fields one by one. Anything doubtful is dropped, so the
  * user only ever sees values they can check in the form before planning.
@@ -58,38 +114,12 @@ const real = (text: string) => (PLACEHOLDER.test(text.trim()) ? '' : text);
 export function parseExtracted(raw: unknown, today: string): Partial<EventDetails> | null {
   const obj = toObject(raw);
   if (!obj) return null;
-  const out: Partial<EventDetails> = {};
-
-  if (isEventType(obj.eventType)) out.eventType = obj.eventType;
-  const title = real(cleanText(obj.title, LIMITS.titleMax));
-  if (title) out.title = title;
-  if (typeof obj.date === 'string' && !Number.isNaN(parseIsoDate(obj.date))) {
-    const ahead = daysBetween(today, obj.date);
-    if (ahead >= 0 && ahead <= LIMITS.maxDaysAhead) out.date = obj.date;
+  const out: Record<string, unknown> = {};
+  for (const [key, read] of Object.entries(READERS) as [keyof EventDetails, Reader<keyof EventDetails>][]) {
+    const value = read(obj[key], today);
+    if (value !== undefined) out[key] = value;
   }
-  const city = real(cleanText(obj.city, LIMITS.cityMax));
-  if (city.length >= 2) out.city = city;
-  const guests = toInt(obj.guests);
-  if (guests >= LIMITS.guestsMin && guests <= LIMITS.guestsMax) out.guests = guests;
-  const budget = toInt(obj.budget);
-  if (budget >= LIMITS.budgetMin && budget <= LIMITS.budgetMax) out.budget = budget;
-  const preferences = real(cleanText(obj.preferences, LIMITS.preferencesMax));
-  if (preferences) out.preferences = preferences;
-  const priorities = pickAllowed(obj.priorities, isPriority, 2);
-  if (priorities.length > 0) out.priorities = priorities;
-  if (isVenueType(obj.venueType) && obj.venueType !== 'undecided') out.venueType = obj.venueType;
-  const diets = pickAllowed(obj.diets, isDiet, DIETS.length);
-  if (diets.length > 0) out.diets = diets;
-  if (isAgeGroup(obj.ageGroup) && obj.ageGroup !== 'mixed') out.ageGroup = obj.ageGroup;
-  const colors = real(cleanText(obj.colors, LIMITS.colorsMax));
-  if (colors) out.colors = colors;
-  if (isTradition(obj.tradition) && obj.tradition !== 'modern') out.tradition = obj.tradition;
-  const venueName = real(cleanText(obj.venueName, LIMITS.venueMax));
-  if (venueName.length >= 2) out.venueName = venueName;
-  const venuePreference = real(cleanText(obj.venuePreference, LIMITS.venueMax));
-  if (venuePreference.length >= 3) out.venuePreference = venuePreference;
-
-  return Object.keys(out).length > 0 ? out : null;
+  return Object.keys(out).length > 0 ? (out as Partial<EventDetails>) : null;
 }
 
 /** Gemini schema for assistant answers, with an optional change proposal. */
