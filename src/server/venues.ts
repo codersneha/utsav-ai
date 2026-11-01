@@ -443,16 +443,24 @@ const MAPS_HOSTS = new Set([
 ]);
 const SHORT_HOSTS = new Set(['maps.app.goo.gl', 'goo.gl']);
 
-/** Reads a venue's name and location from a Google Maps link (full or short). */
-export async function resolveMapsLink(link: string, fetchImpl: typeof fetch = fetch): Promise<Venue | null> {
-  let url: URL;
+const MAX_REDIRECTS = 3;
+
+function parseUrl(link: string): URL | null {
   try {
-    url = new URL(link.trim());
+    return new URL(link.trim());
   } catch {
     return null;
   }
-  // Short links redirect to the full link; only Google's own hosts are ever fetched.
-  for (let hop = 0; hop < 3 && url.protocol === 'https:' && SHORT_HOSTS.has(url.hostname); hop++) {
+}
+
+/** Short links redirect to the full link; only Google's own short hosts are ever fetched. */
+async function expandShortLink(start: URL, fetchImpl: typeof fetch): Promise<URL | null> {
+  let url = start;
+  for (
+    let hop = 0;
+    hop < MAX_REDIRECTS && url.protocol === 'https:' && SHORT_HOSTS.has(url.hostname);
+    hop++
+  ) {
     const res = await fetchImpl(url.toString(), {
       redirect: 'manual',
       headers: { 'User-Agent': USER_AGENT },
@@ -462,18 +470,24 @@ export async function resolveMapsLink(link: string, fetchImpl: typeof fetch = fe
     if (!next) return null;
     url = new URL(next, url);
   }
-  if (url.protocol !== 'https:' || !MAPS_HOSTS.has(url.hostname) || !url.pathname.startsWith('/maps')) {
-    return null;
-  }
+  return url;
+}
+
+const isMapsUrl = (url: URL) =>
+  url.protocol === 'https:' && MAPS_HOSTS.has(url.hostname) && url.pathname.startsWith('/maps');
+
+const isCoordinate = (lat: number, lon: number) =>
+  Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+
+/** The place name and its pin (or, failing that, the map's centre) from a full Google Maps URL. */
+function placeFromMapsUrl(url: URL): Venue | null {
   const placeName = /\/maps\/place\/([^/]+)/.exec(url.pathname)?.[1];
   const name = cleanText(decodeURIComponent((placeName ?? '').replace(/\+/g, ' ')), 100);
-  const exact = /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/.exec(url.pathname);
+  const pin = /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/.exec(url.pathname);
   const view = /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/.exec(url.pathname);
-  const lat = Number(exact?.[1] ?? view?.[1]);
-  const lon = Number(exact?.[2] ?? view?.[2]);
-  if (!name || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-    return null;
-  }
+  const lat = Number(pin?.[1] ?? view?.[1]);
+  const lon = Number(pin?.[2] ?? view?.[2]);
+  if (!name || !isCoordinate(lat, lon)) return null;
   return {
     name,
     kind: 'from Google Maps',
@@ -483,6 +497,13 @@ export async function resolveMapsLink(link: string, fetchImpl: typeof fetch = fe
     mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${lat},${lon}`)}`,
     osmUrl: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`,
   };
+}
+
+/** Reads a venue's name and location from a Google Maps link (full or short). */
+export async function resolveMapsLink(link: string, fetchImpl: typeof fetch = fetch): Promise<Venue | null> {
+  const start = parseUrl(link);
+  const url = start && (await expandShortLink(start, fetchImpl));
+  return url && isMapsUrl(url) ? placeFromMapsUrl(url) : null;
 }
 
 export interface Area {
@@ -647,33 +668,62 @@ const popularity = (v: Venue) => (v.rating ?? 0) * Math.log10((v.reviews ?? 0) +
 export async function findVenues(
   city: string,
   fetchImpl: typeof fetch = fetch,
-  {
-    venueType = 'undecided',
-    preference = '',
-    limit = 20,
-    pause = wait,
-    centre,
-    radiusKm = 12,
-    placesKey,
-  }: VenueSearch = {},
+  search: VenueSearch = {},
 ): Promise<Venue[]> {
-  const area = centre ?? (await geocodeCity(city, fetchImpl));
+  const area = search.centre ?? (await geocodeCity(city, fetchImpl));
+  return search.placesKey
+    ? findWithGooglePlaces(area, search.placesKey, fetchImpl, search)
+    : findOnOpenStreetMap(city, area, fetchImpl, search);
+}
+
+/** Google-quality results with ratings, when a Places key is configured. */
+async function findWithGooglePlaces(
+  area: Area,
+  placesKey: string,
+  fetchImpl: typeof fetch,
+  { venueType = 'undecided', preference = '', limit = 20, radiusKm = 12 }: VenueSearch,
+): Promise<Venue[]> {
+  const what = preference.trim() || TYPE_QUERY[venueType];
+  const places = await googleTextSearch(
+    `best ${what} near ${area.name}`,
+    area,
+    placesKey,
+    fetchImpl,
+    radiusKm,
+  );
+  return places
+    .map((v) => ({ ...v, distanceKm: distanceKm(area.lat, area.lon, v.lat, v.lon) }))
+    .filter((v) => v.distanceKm <= radiusKm * 1.5)
+    .sort((a, b) => popularity(b) - popularity(a) || a.distanceKm - b.distanceKm)
+    .slice(0, limit);
+}
+
+/** Map tags that established places usually fill in. */
+const ESTABLISHED_TAGS = ['website', 'contact:website', 'phone', 'contact:phone', 'opening_hours', 'cuisine'];
+
+/** Name searches can match shops or flats; keep places whose name carries the word or sounds like a venue. */
+const fitsNameSearch = (venue: Venue, query: string) =>
+  query.startsWith('[') ||
+  venue.name.toLowerCase().includes(query.split(' ')[0]) ||
+  EVENT_NAME.test(venue.name);
+
+/** Higher for places that match the user's words, came from an earlier search, and look established. */
+function scoreHit(venue: Venue, hit: unknown, words: string[], searchesLeft: number) {
+  const text = `${venue.name} ${venue.kind}`.toLowerCase();
+  const matched = words.filter((w) => text.includes(w));
+  const tags = (hit as { extratags?: Record<string, string> | null }).extratags ?? {};
+  const established = ESTABLISHED_TAGS.filter((k) => tags[k]).length;
+  return { matched, score: matched.length * 3 + Math.max(0, searchesLeft) + Math.min(established, 3) };
+}
+
+/** Free search over OpenStreetMap: several spaced-out queries, merged and ranked. */
+async function findOnOpenStreetMap(
+  city: string,
+  area: Area,
+  fetchImpl: typeof fetch,
+  { venueType = 'undecided', preference = '', limit = 20, pause = wait, radiusKm = 12 }: VenueSearch,
+): Promise<Venue[]> {
   const { lat, lon } = area;
-  if (placesKey) {
-    const what = preference.trim() || TYPE_QUERY[venueType];
-    const places = await googleTextSearch(
-      `best ${what} near ${area.name}`,
-      area,
-      placesKey,
-      fetchImpl,
-      radiusKm,
-    );
-    return places
-      .map((v) => ({ ...v, distanceKm: distanceKm(lat, lon, v.lat, v.lon) }))
-      .filter((v) => v.distanceKm <= radiusKm * 1.5)
-      .sort((a, b) => popularity(b) - popularity(a) || a.distanceKm - b.distanceKm)
-      .slice(0, limit);
-  }
   const box = radiusKm * KM;
   const viewbox = [lon - box, lat + box, lon + box, lat - box].join(',');
   const searches = searchesFor(venueType, preference);
@@ -687,26 +737,9 @@ export async function findVenues(
     const hits = Array.isArray(data) ? data.filter((h) => isHit(h) && !NOT_VENUES.has(h.category ?? '')) : [];
     for (const hit of hits) {
       const venue = toVenues([hit], city)[0];
-      if (!venue) continue;
-      // Name searches can match shops or flats; keep places whose name carries the word or sounds like a venue.
-      const byName = !query.startsWith('[');
-      if (byName && !venue.name.toLowerCase().includes(query.split(' ')[0]) && !EVENT_NAME.test(venue.name))
-        continue;
-      const key = venue.name.toLowerCase();
-      if (found.has(key)) continue;
-      const text = `${venue.name} ${venue.kind}`.toLowerCase();
-      const matched = words.filter((w) => text.includes(w));
-      // Established places usually list a website, phone, opening hours or cuisine on the map.
-      const tags = (hit as { extratags?: Record<string, string> | null }).extratags ?? {};
-      const established = [
-        'website',
-        'contact:website',
-        'phone',
-        'contact:phone',
-        'opening_hours',
-        'cuisine',
-      ].filter((k) => tags[k]).length;
-      const score = matched.length * 3 + Math.max(0, searches.length - rank) + Math.min(established, 3);
+      const key = venue?.name.toLowerCase();
+      if (!venue || !key || found.has(key) || !fitsNameSearch(venue, query)) continue;
+      const { matched, score } = scoreHit(venue, hit, words, searches.length - rank);
       found.set(key, {
         ...venue,
         distanceKm: distanceKm(lat, lon, venue.lat, venue.lon),
