@@ -1,5 +1,5 @@
 import type { Diet, EventDetails, EventType, MenuChoice } from '../../types.js';
-import { buildBudget, excludedCategories } from '../budget.js';
+import { budgetFor } from '../budget.js';
 import {
   PARTY_CEREMONIES,
   TRADITION_DATA,
@@ -57,17 +57,7 @@ export const BASE_PLATE_COST: Record<EventType, number> = {
 
 /** The catering budget per plate: the user's own catering amount if given, else the estimate. */
 export function foodBudgetPerPlate(details: MenuDetails, catering?: number): number {
-  const amount =
-    catering ??
-    buildBudget(
-      details.eventType,
-      details.budget,
-      details.guests,
-      details.priorities,
-      {},
-      excludedCategories({ wantsDecor: details.wantsDecor ?? true }),
-    ).lines.find((l) => l.id === 'catering')?.amount ??
-    0;
+  const amount = catering ?? budgetFor(details).lines.find((l) => l.id === 'catering')?.amount ?? 0;
   return Math.floor(amount / Math.max(1, details.guests));
 }
 
@@ -303,17 +293,7 @@ export function decorTier(
     Partial<Pick<EventDetails, 'wantsDecor'>>,
   decor?: number,
 ): DecorTier {
-  const amount =
-    decor ??
-    buildBudget(
-      details.eventType,
-      details.budget,
-      details.guests,
-      details.priorities,
-      {},
-      excludedCategories({ wantsDecor: details.wantsDecor ?? true }),
-    ).lines.find((l) => l.id === 'decor')?.amount ??
-    0;
+  const amount = decor ?? budgetFor(details).lines.find((l) => l.id === 'decor')?.amount ?? 0;
   const perFunction = amount / Math.max(1, ceremoniesFor(details).length);
   if (perFunction < 40_000) return 'simple';
   if (perFunction < 250_000) return 'classic';

@@ -1,27 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { askPlanner, fetchIdeas, fetchLogistics, venueFromMapsLink, type RefineOptions } from '../lib/api';
-import type { TradeOffAction } from '../lib/budget';
+import { ownAmounts, withOverride, type TradeOffAction } from '../lib/budget';
 import { describeChanges, type PlanChange } from '../lib/changes';
-import { todayIso } from '../lib/dates';
-import {
-  isArrayOf,
-  isChatTurn,
-  isCustomTask,
-  isGuestEntry,
-  isIdeas,
-  isLogistics,
-  isVendorEntry,
-  isVenue,
-} from '../lib/guards';
-import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
-import { buildBudget, excludedCategories } from '../lib/budget';
 import { venueTypeOf } from '../lib/checklist';
+import { todayIso } from '../lib/dates';
+import { entryActions, newId, toggleIn, withChosenVenue } from '../lib/entries';
+import { isIdeas, isLogistics } from '../lib/guards';
+import { fallbackIdeas, mergeIdeas } from '../lib/ideas';
 import { buildPlan } from '../lib/plan';
 import { readSharedPlan } from '../lib/share';
-import { isBoolean, isNumber, isRecordOf, isString } from '../lib/storage';
 import { validateEventDetails } from '../lib/validation';
 import type {
-  ChatTurn,
   CustomTask,
   EventDetails,
   GuestEntry,
@@ -31,26 +20,20 @@ import type {
   VendorEntry,
   Venue,
 } from '../types';
-import { usePersistentState } from './usePersistentState';
+import { useAiResource, type AiRequest } from './useAiResource';
+import { usePlanStore } from './usePlanStore';
 
-/** Validates stored details relative to their own date (saved plans may be in the past). */
-const storedDetails = (v: unknown) => {
-  const date = (v as { date?: unknown } | null)?.date;
-  const result = typeof date === 'string' ? validateEventDetails(v, date) : null;
-  return result?.ok ? result.value : null;
-};
-const isDetails = (v: unknown): v is EventDetails | null => v === null || storedDetails(v) !== null;
-/** Upgrades plans saved by older versions (fills defaults for newer fields). */
-const normalizeDetails = (v: EventDetails | null) => (v === null ? null : storedDetails(v));
 const isStoredIdeas = (v: unknown): v is Ideas | null => v === null || isIdeas(v);
+const isStoredLogistics = (v: unknown): v is Logistics | null => v === null || isLogistics(v);
 
 /** A whole-plan ideas request: always resolves to complete ideas. */
-const wholeIdeas = (d: EventDetails, refine?: RefineOptions) => (signal: AbortSignal) =>
-  fetchIdeas(d, signal, { refine }).then((r) => ({
-    value: isIdeas(r.value) ? r.value : fallbackIdeas(d),
-    notice: r.notice,
-  }));
-const isStoredLogistics = (v: unknown): v is Logistics | null => v === null || isLogistics(v);
+const wholeIdeas =
+  (d: EventDetails, refine?: RefineOptions): AiRequest<Ideas> =>
+  (signal) =>
+    fetchIdeas(d, signal, { refine }).then((r) => ({
+      value: isIdeas(r.value) ? r.value : fallbackIdeas(d),
+      notice: r.notice,
+    }));
 
 /** Everything the user can change, captured before an edit so it can be undone. */
 interface Snapshot {
@@ -62,89 +45,47 @@ interface Snapshot {
   timelineDone: Record<string, boolean>;
 }
 
-let nextId = 0;
-const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(nextId++).toString(36)}`;
+const MAX_UNDO = 10;
+const MAX_CHAT = 20;
+const isLink = (text: string) => /^https?:\/\//i.test(text);
+const flip = (record: Record<string, boolean>, id: string) => ({ ...record, [id]: !record[id] });
+/** Replaces any earlier photo or look note in the preferences rather than piling them up. */
+const withLookNote = (preferences: string, note: string) =>
+  `${preferences.replace(/(Inspired by a photo|Chosen décor look):[^.]*\.?/g, '').trim()} ${note}.`.trim();
 
-/** One AI-backed resource (ideas or logistics) with its loading state. */
-function useAiResource<T>(key: string, isValid: (v: unknown) => v is T | null) {
-  const [value, setValue] = usePersistentState<T | null>(key, null, isValid);
-  const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState<string>();
-  const abortRef = useRef<AbortController | null>(null);
+/** A Google Maps link typed as the venue (e.g. in the form) is read automatically. */
+function useVenueLink(
+  details: EventDetails | null,
+  chooseVenue: (venue: Venue) => void,
+  onError: (message: string) => void,
+) {
+  // The reader needs the latest callbacks without re-running.
+  const callbacks = useRef({ chooseVenue, onError });
+  useEffect(() => {
+    callbacks.current = { chooseVenue, onError };
+  });
 
-  /** Starts a request; state only changes after it settles (safe to call from effects). */
-  const run = useCallback(
-    async (request: (signal: AbortSignal) => Promise<{ value: T; notice?: string }>) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      try {
-        const result = await request(controller.signal);
-        setValue(result.value);
-        setNotice(result.notice);
-      } catch {
-        // Aborted because a newer request started.
-      } finally {
-        if (abortRef.current === controller) setLoading(false);
-      }
-    },
-    [setValue],
-  );
-
-  const start = useCallback(
-    (request: (signal: AbortSignal) => Promise<{ value: T; notice?: string }>) => {
-      setLoading(true);
-      setNotice(undefined);
-      void run(request);
-    },
-    [run],
-  );
-
-  const clear = () => {
-    abortRef.current?.abort();
-    setValue(null);
-    setLoading(false);
-    setNotice(undefined);
-  };
-
-  return { value, loading, notice, start, clear };
+  const venueLink = details && isLink(details.venueName) ? details.venueName : '';
+  useEffect(() => {
+    if (!venueLink) return;
+    let active = true;
+    void venueFromMapsLink(venueLink).then((r) => {
+      if (!active) return;
+      const venue = r.venues[0];
+      if (venue) callbacks.current.chooseVenue(venue);
+      else callbacks.current.onError(r.error ?? 'We couldn’t read that Google Maps link.');
+    });
+    return () => {
+      active = false;
+    };
+  }, [venueLink]);
 }
 
 /** All planner state and actions. Components stay presentational. */
 export function usePlanner() {
-  const [details, setDetails] = usePersistentState<EventDetails | null>(
-    'details',
-    null,
-    isDetails,
-    normalizeDetails,
-  );
-  const [done, setDone] = usePersistentState<Record<string, boolean>>('done', {}, isRecordOf(isBoolean));
-  const [timelineDone, setTimelineDone] = usePersistentState<Record<string, boolean>>(
-    'timelineDone',
-    {},
-    isRecordOf(isBoolean),
-  );
-  const [spent, setSpent] = usePersistentState<Record<string, number>>('spent', {}, isRecordOf(isNumber));
-  const [overrides, setOverrides] = usePersistentState<Record<string, number>>(
-    'overrides',
-    {},
-    isRecordOf(isNumber),
-  );
-  const [customTasks, setCustomTasks] = usePersistentState<CustomTask[]>(
-    'customTasks',
-    [],
-    isArrayOf(isCustomTask),
-  );
-  const [vendors, setVendors] = usePersistentState<VendorEntry[]>('vendors', [], isArrayOf(isVendorEntry));
-  const [guests, setGuests] = usePersistentState<GuestEntry[]>('guests', [], isArrayOf(isGuestEntry));
-  const [budgetLocks, setBudgetLocks] = usePersistentState<string[]>('budgetLocks', [], isArrayOf(isString));
-  const [chosenVenue, setChosenVenue] = usePersistentState<Venue | null>(
-    'venueLink',
-    null,
-    (v): v is Venue | null => v === null || isVenue(v),
-  );
+  const store = usePlanStore();
+  const { details, setDetails, overrides, setOverrides, chat, setChat } = store;
   const [venueLinkError, setVenueLinkError] = useState('');
-  const [chat, setChat] = usePersistentState<ChatTurn[]>('chat', [], isArrayOf(isChatTurn));
   const [asking, setAsking] = useState(false);
   const [busySection, setBusySection] = useState<IdeasSection | null>(null);
   const [change, setChange] = useState<PlanChange | null>(null);
@@ -157,12 +98,11 @@ export function usePlanner() {
   const logistics = useAiResource<Logistics>('logistics', isStoredLogistics);
   const today = todayIso();
 
+  const { customTasks } = store;
+  const vendorAdvice = logistics.value?.vendors;
   const plan = useMemo(
-    () =>
-      details
-        ? buildPlan(details, today, { overrides, customTasks, vendorAdvice: logistics.value?.vendors })
-        : null,
-    [details, today, overrides, customTasks, logistics.value],
+    () => (details ? buildPlan(details, today, { overrides, customTasks, vendorAdvice }) : null),
+    [details, today, overrides, customTasks, vendorAdvice],
   );
 
   // A plan restored from storage fetches whatever AI content it is missing (once, on load).
@@ -185,8 +125,13 @@ export function usePlanner() {
     logistics.start((signal) => fetchLogistics(d, signal));
   };
 
-  const snapshot = (): Snapshot | null =>
-    details ? { details, overrides, done, spent, vendors, timelineDone } : null;
+  /** Saves the current state so the next change can be undone; false when there is no plan yet. */
+  const remember = (): boolean => {
+    if (!details) return false;
+    const { done, spent, vendors, timelineDone } = store;
+    setHistory((h) => [...h, { details, overrides, done, spent, vendors, timelineDone }].slice(-MAX_UNDO));
+    return true;
+  };
 
   /** Shows what changed between two versions of the plan and refreshes AI content if needed. */
   const revise = (
@@ -196,11 +141,7 @@ export function usePlanner() {
     refreshAi: (d: EventDetails) => void = loadAi,
   ) => {
     if (!plan) return;
-    const nextPlan = buildPlan(next, today, {
-      overrides: nextOverrides,
-      customTasks,
-      vendorAdvice: logistics.value?.vendors,
-    });
+    const nextPlan = buildPlan(next, today, { overrides: nextOverrides, customTasks, vendorAdvice });
     const summary = describeChanges(plan, nextPlan, today);
     setChange(prefix ? { ...summary, lines: [prefix, ...summary.lines] } : summary);
     setDetails(next);
@@ -209,17 +150,8 @@ export function usePlanner() {
   };
 
   const submit = (next: EventDetails) => {
-    const before = snapshot();
-    if (before && plan) {
-      setHistory((h) => [...h, before].slice(-10));
-      const summary = revise(next, overrides);
-      if (summary?.reset) {
-        setDone({});
-        setSpent({});
-        setOverrides({});
-        setVendors([]);
-        setTimelineDone({});
-      }
+    if (plan && remember()) {
+      if (revise(next, overrides)?.reset) store.clearProgress();
       return;
     }
     setChange(null);
@@ -234,81 +166,20 @@ export function usePlanner() {
     if (!last) return;
     setHistory((h) => h.slice(0, -1));
     setOverrides(last.overrides);
-    setDone(last.done);
-    setSpent(last.spent);
-    setVendors(last.vendors);
-    setTimelineDone(last.timelineDone);
+    store.setDone(last.done);
+    store.setSpent(last.spent);
+    store.setVendors(last.vendors);
+    store.setTimelineDone(last.timelineDone);
     revise(last.details, last.overrides, 'Undone — the plan is back to how it was.');
   };
 
   /** Turns décor planning on or off: the décor budget and decorator tasks follow, the ideas stay. */
   const setDecor = (on: boolean) => {
-    const before = snapshot();
-    if (!details || !before || details.wantsDecor === on) return;
-    setHistory((h) => [...h, before].slice(-10));
+    if (!details || details.wantsDecor === on || !remember()) return;
     // Money the user put into décor goes back into the split when décor is turned off.
-    const nextOverrides = on
-      ? overrides
-      : Object.fromEntries(Object.entries(overrides).filter(([id]) => id !== 'decor'));
+    const nextOverrides = on ? overrides : withOverride(overrides, 'decor', null);
     setOverrides(nextOverrides);
     revise({ ...details, wantsDecor: on }, nextOverrides);
-  };
-
-  /** Applies a look (from an inspiration photo or a suggested look): new colours, and fresh décor only. */
-  const applyLook = (look: { colors: string; note: string; message?: string }) => {
-    const before = snapshot();
-    if (!details || !before) return;
-    const result = validateEventDetails(
-      {
-        ...details,
-        colors: look.colors,
-        // Replace any earlier photo note rather than piling them up.
-        preferences:
-          `${details.preferences.replace(/(Inspired by a photo|Chosen décor look):[^.]*\.?/g, '').trim()} ${look.note}.`.trim(),
-      },
-      details.date < today ? details.date : today,
-    );
-    if (!result.ok) return;
-    setHistory((h) => [...h, before].slice(-10));
-    revise(
-      result.value,
-      overrides,
-      look.message ?? 'New colours from your photo — refreshing the décor only.',
-      (d) => refreshSection('decor', undefined, d),
-    );
-  };
-
-  /** Opens a plan someone shared by link, replacing the current one. */
-  const openShared = () => {
-    if (!shared) return;
-    reset();
-    setDetails(shared);
-    loadAi(shared);
-    setShared(null);
-    window.history.replaceState(null, '', window.location.pathname);
-  };
-
-  const dismissShared = () => {
-    setShared(null);
-    window.history.replaceState(null, '', window.location.pathname);
-  };
-
-  const applyTradeOff = (action: TradeOffAction) => {
-    if (!details) return;
-    if (action.kind === 'overrides') setOverrides(action.overrides);
-    else submit({ ...details, ...action.patch });
-  };
-
-  const regenerateIdeas = () => {
-    if (details) ideas.start(wholeIdeas(details));
-  };
-
-  const previousThemes = () => ideas.value?.ceremonies.map((c) => c.theme) ?? [];
-
-  /** Re-plans the whole set of ideas from the user's feedback. */
-  const refineIdeas = (request: string) => {
-    if (!details) return;
-    ideas.start(wholeIdeas(details, { request, previousThemes: previousThemes() }));
   };
 
   /** Regenerates one section (décor, menu or extras) and keeps everything else as it is. */
@@ -327,110 +198,91 @@ export function usePlanner() {
     );
   };
 
+  /** Applies a look (from an inspiration photo or a suggested look): new colours, and fresh décor only. */
+  const applyLook = (look: { colors: string; note: string; message?: string }) => {
+    if (!details) return;
+    const result = validateEventDetails(
+      { ...details, colors: look.colors, preferences: withLookNote(details.preferences, look.note) },
+      details.date < today ? details.date : today,
+    );
+    if (!result.ok || !remember()) return;
+    revise(
+      result.value,
+      overrides,
+      look.message ?? 'New colours from your photo — refreshing the décor only.',
+      (d) => refreshSection('decor', undefined, d),
+    );
+  };
+
+  const reset = () => {
+    ideas.clear();
+    logistics.clear();
+    store.clearAll();
+    setChange(null);
+    setHistory([]);
+  };
+
+  const closeSharedLink = () => {
+    setShared(null);
+    window.history.replaceState(null, '', window.location.pathname);
+  };
+
+  /** Opens a plan someone shared by link, replacing the current one. */
+  const openShared = () => {
+    if (!shared) return;
+    reset();
+    setDetails(shared);
+    loadAi(shared);
+    closeSharedLink();
+  };
+
+  const applyTradeOff = (action: TradeOffAction) => {
+    if (!details) return;
+    if (action.kind === 'overrides') setOverrides(action.overrides);
+    else submit({ ...details, ...action.patch });
+  };
+
+  const previousThemes = () => ideas.value?.ceremonies.map((c) => c.theme) ?? [];
+
   const ask = async (question: string) => {
     if (!details) return;
     setAsking(true);
     const { answer, proposal } = await askPlanner(details, question, chat);
-    setChat((c) => [...c, proposal ? { question, answer, proposal } : { question, answer }].slice(-20));
+    setChat((c) => [...c, proposal ? { question, answer, proposal } : { question, answer }].slice(-MAX_CHAT));
     setAsking(false);
   };
+
+  const markProposal = (index: number, proposalState: 'applied' | 'dismissed') =>
+    setChat((c) => c.map((t, i) => (i === index ? { ...t, proposalState } : t)));
 
   /** Applies a change the assistant proposed — only after the user clicks Apply. */
   const applyProposal = (index: number) => {
     const turn = chat[index];
     if (!details || !turn?.proposal || turn.proposalState) return;
     const { guests, budget, date } = turn.proposal;
-    const candidate = {
-      ...details,
-      ...(guests ? { guests } : {}),
-      ...(budget ? { budget } : {}),
-      ...(date ? { date } : {}),
-    };
     // Re-validate: stored proposals could be stale or edited.
-    const result = validateEventDetails(candidate, today);
+    const result = validateEventDetails(
+      { ...details, ...(guests ? { guests } : {}), ...(budget ? { budget } : {}), ...(date ? { date } : {}) },
+      today,
+    );
     if (!result.ok) return;
     submit(result.value);
-    setChat((c) => c.map((t, i) => (i === index ? { ...t, proposalState: 'applied' } : t)));
+    markProposal(index, 'applied');
   };
-
-  const dismissProposal = (index: number) =>
-    setChat((c) => c.map((t, i) => (i === index ? { ...t, proposalState: 'dismissed' } : t)));
-
-  const reset = () => {
-    ideas.clear();
-    logistics.clear();
-    setDetails(null);
-    setDone({});
-    setTimelineDone({});
-    setSpent({});
-    setOverrides({});
-    setCustomTasks([]);
-    setVendors([]);
-    setGuests([]);
-    setBudgetLocks([]);
-    setChosenVenue(null);
-    setChat([]);
-    setChange(null);
-    setHistory([]);
-  };
-
-  const toggle = (setter: typeof setDone) => (id: string) => setter((d) => ({ ...d, [id]: !d[id] }));
 
   /** Makes a venue the plan's venue and records it in the Venue vendor row. */
   const chooseVenue = (venue: Venue) => {
     if (!details) return;
-    setChosenVenue(venue);
+    store.setChosenVenue(venue);
     setVenueLinkError('');
-    setVendors((list) => {
-      const others = list.map((e) =>
-        e.groupId === 'venue' && e.status === 'pending' && e.name !== venue.name
-          ? { ...e, status: 'shortlisted' as const }
-          : e,
-      );
-      const existing = others.find((e) => e.groupId === 'venue' && e.name === venue.name);
-      if (existing) return others.map((e) => (e === existing ? { ...e, status: 'pending' as const } : e));
-      return [
-        ...others,
-        {
-          id: newId('vendor'),
-          groupId: 'venue',
-          name: venue.name,
-          contact: '',
-          address: venue.address,
-          mapsUrl: venue.mapsUrl,
-          notes: 'Chosen as the venue — confirm the booking and update the status.',
-          quote: 0,
-          status: 'pending' as const,
-        },
-      ];
-    });
+    store.setVendors((list) => withChosenVenue(list, venue));
     submit({
       ...details,
       venueName: venue.name,
       venueType: venueTypeOf(venue.kind, venue.name) ?? details.venueType,
     });
   };
-  // The link reader below needs the latest chooseVenue without re-running.
-  const chooseVenueRef = useRef(chooseVenue);
-  useEffect(() => {
-    chooseVenueRef.current = chooseVenue;
-  });
-
-  // A Google Maps link typed as the venue (e.g. in the form) is read automatically.
-  const venueLink = details && /^https?:\/\//i.test(details.venueName) ? details.venueName : '';
-  useEffect(() => {
-    if (!venueLink) return;
-    let active = true;
-    void venueFromMapsLink(venueLink).then((r) => {
-      if (!active) return;
-      const venue = r.venues[0];
-      if (venue) chooseVenueRef.current(venue);
-      else setVenueLinkError(r.error ?? 'We couldn’t read that Google Maps link.');
-    });
-    return () => {
-      active = false;
-    };
-  }, [venueLink]);
+  useVenueLink(details, chooseVenue, setVenueLinkError);
 
   return {
     details,
@@ -442,74 +294,53 @@ export function usePlanner() {
     reset,
     canUndo: history.length > 0,
     undo,
-    shared: { details: shared, open: openShared, dismiss: dismissShared },
+    shared: { details: shared, open: openShared, dismiss: closeSharedLink },
     applyLook,
     setDecor,
     chooseVenue,
-    chosenVenue,
+    chosenVenue: store.chosenVenue,
     venueLinkError,
-    ideas: { ...ideas, regenerate: regenerateIdeas, refine: refineIdeas, refreshSection, busySection },
+    ideas: {
+      ...ideas,
+      regenerate: () => details && ideas.start(wholeIdeas(details)),
+      /** Re-plans the whole set of ideas from the user's feedback. */
+      refine: (request: string) =>
+        details && ideas.start(wholeIdeas(details, { request, previousThemes: previousThemes() })),
+      refreshSection,
+      busySection,
+    },
     logistics,
     budget: {
       overrides,
-      spent,
-      setOverride: (id: string, amount: number | null) =>
-        setOverrides((o) => {
-          const next = { ...o };
-          if (amount === null) delete next[id];
-          else next[id] = amount;
-          return next;
-        }),
-      setSpent: (id: string, amount: number) => setSpent((s) => ({ ...s, [id]: amount })),
+      spent: store.spent,
+      setOverride: (id: string, amount: number | null) => setOverrides((o) => withOverride(o, id, amount)),
+      setSpent: (id: string, amount: number) => store.setSpent((s) => ({ ...s, [id]: amount })),
       /** Saves a whole new split; only amounts that differ from the suggestion count as the user's own. */
-      setAmounts: (amounts: Record<string, number>) => {
-        if (!details) return;
-        const suggested = buildBudget(
-          details.eventType,
-          details.budget,
-          details.guests,
-          details.priorities,
-          {},
-          excludedCategories(details),
-        );
-        setOverrides(
-          Object.fromEntries(
-            suggested.lines
-              .filter((l) => amounts[l.id] !== undefined && amounts[l.id] !== l.amount)
-              .map((l) => [l.id, amounts[l.id]]),
-          ),
-        );
-      },
-      locks: budgetLocks,
-      toggleLock: (id: string) =>
-        setBudgetLocks((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id])),
+      setAmounts: (amounts: Record<string, number>) => details && setOverrides(ownAmounts(details, amounts)),
+      locks: store.budgetLocks,
+      toggleLock: (id: string) => store.setBudgetLocks((l) => toggleIn(l, id)),
       applyTradeOff,
     },
     timeline: {
-      done: timelineDone,
-      toggle: toggle(setTimelineDone),
+      done: store.timelineDone,
+      toggle: (id: string) => store.setTimelineDone((d) => flip(d, id)),
       addTask: (task: Omit<CustomTask, 'id'>) =>
-        setCustomTasks((t) => [...t, { ...task, id: newId('task') }]),
-      removeTask: (id: string) => setCustomTasks((t) => t.filter((x) => x.id !== id)),
+        store.setCustomTasks((t) => [...t, { ...task, id: newId('task') }]),
+      removeTask: (id: string) => store.setCustomTasks((t) => t.filter((x) => x.id !== id)),
     },
-    checklist: { done, toggle: toggle(setDone) },
-    vendors: {
-      entries: vendors,
-      add: (entry: Omit<VendorEntry, 'id'>) => setVendors((v) => [...v, { ...entry, id: newId('vendor') }]),
-      update: (id: string, patch: Partial<Omit<VendorEntry, 'id' | 'groupId'>>) =>
-        setVendors((v) => v.map((e) => (e.id === id ? { ...e, ...patch } : e))),
-      remove: (id: string) => setVendors((v) => v.filter((e) => e.id !== id)),
-    },
-    guests: {
-      entries: guests,
-      add: (entry: Omit<GuestEntry, 'id'>) => setGuests((g) => [...g, { ...entry, id: newId('guest') }]),
-      update: (id: string, patch: Partial<Omit<GuestEntry, 'id'>>) =>
-        setGuests((g) => g.map((e) => (e.id === id ? { ...e, ...patch } : e))),
-      remove: (id: string) => setGuests((g) => g.filter((e) => e.id !== id)),
-    },
+    checklist: { done: store.done, toggle: (id: string) => store.setDone((d) => flip(d, id)) },
+    vendors: { entries: store.vendors, ...entryActions<VendorEntry, 'groupId'>(store.setVendors, 'vendor') },
+    guests: { entries: store.guests, ...entryActions<GuestEntry>(store.setGuests, 'guest') },
     /** Re-plans for a new guest count (with the change report and undo). */
     setGuestCount: (count: number) => details && submit({ ...details, guests: count }),
-    chat: { turns: chat, asking, ask, clear: () => setChat([]), applyProposal, dismissProposal },
+    chat: {
+      turns: chat,
+      asking,
+      ask,
+      clear: () => setChat([]),
+      applyProposal,
+      dismissProposal: (index: number) => markProposal(index, 'dismissed'),
+    },
   };
 }
 

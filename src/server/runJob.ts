@@ -9,7 +9,7 @@ import {
   parseInspiration,
   parseProposal,
 } from '../lib/assistant.js';
-import { buildBudget, excludedCategories } from '../lib/budget.js';
+import { budgetFor } from '../lib/budget.js';
 import { IDEAS_SCHEMAS, parseIdeas } from '../lib/ideas.js';
 import { LOGISTICS_RESPONSE_SCHEMA, parseLogistics } from '../lib/logistics.js';
 import {
@@ -69,14 +69,7 @@ async function runLogistics(job: Of<'logistics'>, base: Base, fetchImpl: Fetch):
 
 async function runAsk(job: Of<'ask'>, base: Base, fetchImpl: Fetch): Outcome {
   const { details } = job;
-  const budget = buildBudget(
-    details.eventType,
-    details.budget,
-    details.guests,
-    details.priorities,
-    {},
-    excludedCategories(details),
-  );
+  const budget = budgetFor(details);
   const prompt = buildAskPrompt(details, budget, job.history, job.question, job.today);
   const text = await generateText(
     { ...base, prompt, responseSchema: ASK_RESPONSE_SCHEMA, temperature: 0.5, maxOutputTokens: 2048 },

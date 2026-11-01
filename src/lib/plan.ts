@@ -1,5 +1,5 @@
 import type { CustomTask, EventDetails, EventPlan, VendorAdvice } from '../types.js';
-import { buildBudget, excludedCategories } from './budget.js';
+import { budgetFor } from './budget.js';
 import { buildChecklist } from './checklist.js';
 import { buildTimeline } from './timeline.js';
 
@@ -14,14 +14,7 @@ export interface PlanEdits {
 export function buildPlan(details: EventDetails, today: string, edits: PlanEdits = {}): EventPlan {
   return {
     details,
-    budget: buildBudget(
-      details.eventType,
-      details.budget,
-      details.guests,
-      details.priorities,
-      edits.overrides,
-      excludedCategories(details),
-    ),
+    budget: budgetFor(details, edits.overrides),
     timeline: buildTimeline(details.eventType, details.date, today, edits.customTasks),
     checklist: buildChecklist(details.eventType, edits.vendorAdvice, details.venueType, details.wantsDecor),
   };

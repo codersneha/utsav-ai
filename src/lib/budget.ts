@@ -351,3 +351,46 @@ export function describeShift(plan: BudgetPlan, next: Record<string, number>): s
 /** Budget categories a plan leaves out, from its details. */
 export const excludedCategories = (details: { wantsDecor: boolean }): string[] =>
   details.wantsDecor ? [] : ['decor'];
+
+/** The parts of an event's details that shape its budget. */
+export interface BudgetInputs {
+  eventType: EventType;
+  budget: number;
+  guests: number;
+  priorities: Priority[];
+  /** Plans saved before décor could be switched off have no value: they plan décor. */
+  wantsDecor?: boolean;
+}
+
+/** The budget for an event, with the user's own amounts applied. */
+export function budgetFor(details: BudgetInputs, overrides: Record<string, number> = {}): BudgetPlan {
+  return buildBudget(
+    details.eventType,
+    details.budget,
+    details.guests,
+    details.priorities,
+    overrides,
+    excludedCategories({ wantsDecor: details.wantsDecor ?? true }),
+  );
+}
+
+/** Only the amounts that differ from the suggested split count as the user's own. */
+export function ownAmounts(details: BudgetInputs, amounts: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    budgetFor(details)
+      .lines.filter((l) => amounts[l.id] !== undefined && amounts[l.id] !== l.amount)
+      .map((l) => [l.id, amounts[l.id]]),
+  );
+}
+
+/** Sets one category to the user's amount, or back to the suggestion when the amount is null. */
+export function withOverride(
+  overrides: Record<string, number>,
+  id: string,
+  amount: number | null,
+): Record<string, number> {
+  const next = { ...overrides };
+  if (amount === null) delete next[id];
+  else next[id] = amount;
+  return next;
+}

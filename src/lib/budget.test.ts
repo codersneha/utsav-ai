@@ -4,7 +4,10 @@ import {
   applyPriorities,
   BUDGET_TEMPLATES,
   buildBudget,
+  budgetFor,
   excludedCategories,
+  ownAmounts,
+  withOverride,
   describeShift,
   guestImpact,
   PRIORITY_BOOST,
@@ -218,5 +221,30 @@ describe('décor turned off', () => {
     expect(plan.lines.find((l) => l.id === 'decor')?.amount ?? 0).toBe(0);
     expect(plan.lines.reduce((s, l) => s + l.amount, 0)).toBe(60_000);
     expect(excludedCategories({ wantsDecor: true })).toEqual([]);
+  });
+});
+
+describe('budgetFor', () => {
+  const details = { eventType: 'birthday' as const, budget: 60_000, guests: 40, priorities: [] };
+
+  it('matches buildBudget for the same details and leaves décor out when it is switched off', () => {
+    expect(budgetFor(details)).toEqual(buildBudget('birthday', 60_000, 40, []));
+    const noDecor = budgetFor({ ...details, wantsDecor: false });
+    expect(noDecor.lines.find((l) => l.id === 'decor')?.amount).toBe(0);
+    expect(noDecor.lines.reduce((sum, l) => sum + l.amount, 0) + noDecor.unallocated).toBe(60_000);
+  });
+
+  it("keeps only the amounts that differ from the suggestion as the user's own", () => {
+    const suggested = Object.fromEntries(budgetFor(details).lines.map((l) => [l.id, l.amount]));
+    const firstId = Object.keys(suggested)[0];
+    expect(ownAmounts(details, suggested)).toEqual({});
+    expect(ownAmounts(details, { ...suggested, [firstId]: suggested[firstId] + 500 })).toEqual({
+      [firstId]: suggested[firstId] + 500,
+    });
+  });
+
+  it('sets or clears one override without touching the others', () => {
+    expect(withOverride({ venue: 10 }, 'decor', 5)).toEqual({ venue: 10, decor: 5 });
+    expect(withOverride({ venue: 10, decor: 5 }, 'decor', null)).toEqual({ venue: 10 });
   });
 });
