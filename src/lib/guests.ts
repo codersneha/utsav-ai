@@ -1,7 +1,7 @@
 import type { GuestEntry, GuestSide, RsvpStatus } from '../types.js';
 
 /** How likely each reply is to mean the guests actually come. */
-export const ATTENDANCE_CHANCE: Record<RsvpStatus, number> = {
+const ATTENDANCE_CHANCE: Record<RsvpStatus, number> = {
   confirmed: 1,
   likely: 0.85,
   'not-asked': 0.75,

@@ -15,7 +15,7 @@ import type { PreparedImage } from './image.js';
 import { fallbackIdeas } from './ideas.js';
 import { fallbackLogistics } from './logistics.js';
 
-export const CLIENT_TIMEOUT_MS = 25_000;
+const CLIENT_TIMEOUT_MS = 25_000;
 
 export interface AiResult<T> {
   value: T;
@@ -223,40 +223,32 @@ export async function analyzePhoto(image: PreparedImage): Promise<InspirationRes
 
 export interface VenueResult {
   venues: Venue[];
-  /** The place a search looked around (so a wrong match can be corrected). */
-  area?: string;
   error?: string;
 }
 
-async function venueRequest(body: Record<string, string | number>): Promise<VenueResult> {
+const VENUE_ERRORS: Record<number, string> = {
+  400: 'That doesn’t look like a Google Maps link — in Google Maps, tap Share → Copy link.',
+  422: 'That doesn’t look like a Google Maps link to a place — open the venue in Google Maps and copy its link.',
+  429: 'Too many requests at once — please wait a minute.',
+};
+
+/** Reads a venue's name and location from a Google Maps link. */
+export async function venueFromMapsLink(url: string): Promise<VenueResult> {
   try {
-    const res = await postJson({ mode: 'venues', ...body });
+    const res = await postJson({ mode: 'venues', action: 'link', url });
     if (!res.ok) {
       return {
         venues: [],
-        error:
-          res.status === 404
-            ? 'We could not find that place on the map — try a nearby locality or a PIN code.'
-            : res.status === 422
-              ? 'That doesn’t look like a Google Maps link to a place — open the venue in Google Maps and copy its link.'
-              : res.status === 429
-                ? 'Too many searches at once — please wait a minute.'
-                : 'The map service is busy — please try again shortly.',
+        error: VENUE_ERRORS[res.status] ?? 'The map service is busy — please try again shortly.',
       };
     }
-    const data = (await res.json()) as { venues?: unknown; area?: { name?: unknown } };
+    const data = (await res.json()) as { venues?: unknown };
     // Links are checked so a tampered response cannot point users elsewhere.
-    return {
-      venues: isArrayOf(isVenue)(data.venues) ? data.venues : [],
-      ...(typeof data.area?.name === 'string' ? { area: data.area.name } : {}),
-    };
+    return { venues: isArrayOf(isVenue)(data.venues) ? data.venues : [] };
   } catch {
-    return { venues: [], error: 'You seem to be offline — venue search needs a connection.' };
+    return { venues: [], error: 'You seem to be offline — reading the link needs a connection.' };
   }
 }
-
-/** Reads a venue's name and location from a Google Maps link. */
-export const venueFromMapsLink = (url: string) => venueRequest({ action: 'link', url });
 
 export interface MenuScanResult {
   order?: PartyOrder;

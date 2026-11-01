@@ -63,7 +63,7 @@ export const BUDGET_TEMPLATES: Record<EventType, CategorySpec[]> = {
 export const PRIORITY_BOOST = 5;
 
 /** Below this catering spend per guest (INR) the plan is likely unrealistic. */
-export const MIN_CATERING_PER_GUEST: Record<EventType, number> = {
+const MIN_CATERING_PER_GUEST: Record<EventType, number> = {
   wedding: 600,
   birthday: 250,
   community: 120,

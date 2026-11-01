@@ -73,7 +73,7 @@ const STAGE_LABELS: Record<Stage, string> = {
 };
 
 /** Where a vendor category stands, from the user's own records and ticks. */
-export function vendorStage(entries: VendorEntry[], tasksDone: number): Stage {
+function vendorStage(entries: VendorEntry[], tasksDone: number): Stage {
   if (entries.some((e) => e.status === 'confirmed')) return 'booked';
   if (entries.some((e) => e.status === 'pending')) return 'chosen';
   if (entries.some((e) => e.quote > 0)) return 'quoted';

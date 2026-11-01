@@ -5,7 +5,7 @@
  * the free tier in testing (Oct 2026); the second covers demand spikes on the first.
  */
 export const DEFAULT_MODEL = 'gemini-3.1-flash-lite,gemini-3-flash-preview';
-export const GEMINI_TIMEOUT_MS = 20_000;
+const GEMINI_TIMEOUT_MS = 20_000;
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export interface GeminiRequest {
@@ -40,7 +40,7 @@ interface GeminiResponse {
 
 /** Temporary failures worth one more try: rate limited, overloaded or stalled. */
 const RETRYABLE = new Set([429, 503, 504]);
-export const MAX_ATTEMPTS = 2;
+const MAX_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 800;
 
 /** Extracts Google's error message (never contains the key) for server logs. */

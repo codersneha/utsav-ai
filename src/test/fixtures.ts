@@ -102,18 +102,17 @@ export const apiLogistics = {
   source: 'gemini',
 };
 
-export const sampleVenue = {
+const sampleVenue = {
   name: 'Rajbari Banquet',
   kind: 'events venue',
   address: 'Salt Lake, Kolkata',
   lat: 22.58,
   lon: 88.41,
-  distanceKm: 3.2,
   mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Rajbari%20Banquet%2C%20Kolkata',
   osmUrl: 'https://www.openstreetmap.org/node/1',
 };
 
-export const sampleOrder = {
+const sampleOrder = {
   itemsRead: 2,
   items: [
     { name: 'Paneer Tikka', category: 'starter', veg: true, price: 320, serves: 2 },
@@ -132,7 +131,7 @@ export const sampleOrder = {
   note: 'Taxes not included.',
 };
 
-export const sampleInspiration = {
+const sampleInspiration = {
   theme: 'Garden marigold',
   mood: 'Sunny and relaxed',
   palette: [
@@ -152,11 +151,9 @@ export function apiResponder(answer = 'Book the venue first.') {
     } else if (body.mode === 'venues') {
       payload = {
         venues:
-          body.action === 'search'
-            ? [sampleVenue]
-            : body.action === 'link'
-              ? [{ ...sampleVenue, name: 'Boho The Sky Cafe', kind: 'from Google Maps', address: '' }]
-              : [],
+          body.action === 'link'
+            ? [{ ...sampleVenue, name: 'Boho The Sky Cafe', kind: 'from Google Maps', address: '' }]
+            : [],
       };
     } else if (body.mode === 'menuScan') {
       payload = { order: sampleOrder };

@@ -43,12 +43,12 @@ export function ceremoniesFor(
 const VEG_DIETS: Diet[] = ['vegetarian', 'jain', 'vegan'];
 
 /** True when the guests are vegetarian only (dietary needs given, none non-vegetarian). */
-export function isVegOnly(diets: Diet[]): boolean {
+function isVegOnly(diets: Diet[]): boolean {
   return diets.length > 0 && !diets.includes('non-vegetarian');
 }
 
 /** Service, staff, crockery and staples per plate, before any dish. */
-export const BASE_PLATE_COST: Record<EventType, number> = {
+const BASE_PLATE_COST: Record<EventType, number> = {
   wedding: 180,
   corporate: 150,
   birthday: 80,

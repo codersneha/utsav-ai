@@ -48,7 +48,7 @@ export function eventData(details: EventDetails): Record<string, unknown> {
 }
 
 /** Verified cultural facts the model must work within (from the knowledge base). */
-export function cultureData(details: EventDetails) {
+function cultureData(details: EventDetails) {
   const menu = menuFor(details);
   const tier = decorTier(details);
   return {

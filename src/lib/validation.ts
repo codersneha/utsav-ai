@@ -65,7 +65,7 @@ export const isDiet = (v: unknown): v is Diet => DIETS.includes(v as Diet);
 export const isVenueType = (v: unknown): v is VenueType => VENUE_TYPES.includes(v as VenueType);
 export const isAgeGroup = (v: unknown): v is AgeGroup => AGE_GROUPS.includes(v as AgeGroup);
 export const isTradition = (v: unknown): v is TraditionId => TRADITIONS.includes(v as TraditionId);
-export const isLanguage = (v: unknown): v is Language => LANGUAGES.includes(v as Language);
+const isLanguage = (v: unknown): v is Language => LANGUAGES.includes(v as Language);
 
 /** Keeps only allowed values from an untrusted array, without duplicates. */
 export function pickAllowed<T>(value: unknown, isAllowed: (v: unknown) => v is T, max: number): T[] {

@@ -1,7 +1,7 @@
 /** Client-side photo preparation: shrink before upload (faster, cheaper, private). */
 
 export const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
-export const MAX_SOURCE_BYTES = 15 * 1024 * 1024;
+const MAX_SOURCE_BYTES = 15 * 1024 * 1024;
 const MAX_EDGE = 1024;
 /** Menus need sharper images so small prices stay readable. */
 export const MENU_EDGE = 1400;

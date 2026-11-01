@@ -2,10 +2,8 @@ import type { LruCache, RateLimiter } from './rateLimit.js';
 
 export interface HandlerDeps {
   apiKey: string | undefined;
-  /** Used for map (venue) lookups; defaults to fetchImpl. */
+  /** Used to expand short Google Maps links; defaults to fetchImpl. */
   mapFetch?: typeof fetch;
-  /** Optional Google Places key: Google-quality venue search with ratings. */
-  placesKey?: string;
   model?: string;
   fetchImpl?: typeof fetch;
   limiter?: RateLimiter;

@@ -9,7 +9,7 @@ export function parseIsoDate(value: string): number {
   return ms;
 }
 
-export function toIsoDate(ms: number): string {
+function toIsoDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 

@@ -256,20 +256,13 @@ export interface ChatTurn {
   proposalState?: 'applied' | 'dismissed';
 }
 
-/** A venue found on the map (OpenStreetMap today; other providers later). */
+/** A venue read from a Google Maps link the user pasted. */
 export interface Venue {
   name: string;
   kind: string;
   address: string;
   lat: number;
   lon: number;
-  /** Distance from the city centre, when searching around a city. */
-  distanceKm?: number;
-  /** Why it was suggested, e.g. Matches “rooftop”. */
-  match?: string;
-  /** Google rating out of 5 and number of reviews (only with Google Places). */
-  rating?: number;
-  reviews?: number;
   /** Google Maps search link — for photos, reviews and ratings. */
   mapsUrl: string;
   osmUrl: string;

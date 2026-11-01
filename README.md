@@ -77,7 +77,7 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 - `src/lib/`: pure, framework-free domain logic — budget & trade-offs, timeline & dependencies, checklist & quotes, change report, validation, prompts, AI-output parsing, calendar export.
 - `src/hooks/`: `usePlanner` exposes every plan action; it is built from `usePlanStore` (everything saved in the browser, each value checked when read back), `useAiResource` (one cancellable AI request with its loading state) and `useVenueLink`. Components stay presentational.
 - `src/lib/culture/`: the tradition knowledge base (functions, palettes, décor, courses, dishes with per-plate costs); `validateMenu` keeps the AI inside it.
-- `src/server/`: a pure `handleGenerate(Request) → Response` that only orchestrates — `jobs.ts` turns the untrusted body into a typed job (one small parser per mode), `runJob.ts` runs it against Gemini (one runner per mode), `venueRoute.ts` handles map lookups, and `http.ts` holds the shared response helpers. Around them: the Gemini REST client (timeouts, retry, model fallback, image input), the map lookups, the rate limiter and the LRU cache. Seven modes: `ideas` (whole plan or one section), `logistics`, `ask`, `extract`, `vision`, `menuScan`, `venues`.
+- `src/server/`: a pure `handleGenerate(Request) → Response` that only orchestrates — `jobs.ts` turns the untrusted body into a typed job (one small parser per mode), `runJob.ts` runs it against Gemini (one runner per mode), `venueRoute.ts` and `mapsLink.ts` read a venue from a pasted Google Maps link, and `http.ts` holds the shared response helpers. Around them: the Gemini REST client (timeouts, retry, model fallback, image input), the rate limiter and the LRU cache. Seven modes: `ideas` (whole plan or one section), `logistics`, `ask`, `extract`, `vision`, `menuScan`, `venues`.
 - `api/generate.ts`: a 5-line Vercel Function entry. The **API key stays on the server**.
 - `src/components/`: accessible React UI, one component per card or section. The planner form lives in `components/plannerForm/` (one file per step, shared field components, a single form-state object). The plan view is lazy-loaded and describes its tabs as data.
 
@@ -95,7 +95,7 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 - **LLM output is treated as untrusted:** it is re-validated, length-capped and stripped of markup; invented vendor ids and malformed times are dropped. React escapes everything, and there is no `dangerouslySetInnerHTML`.
 - Data saved in the browser is re-validated on load (it may be stale or tampered with), and plans saved by older versions are upgraded safely.
 - **Photo uploads** are resized in the browser, then checked on the server by type, size and **file signature (magic bytes)** before Gemini sees them; they are never stored. Only photo requests may exceed the 16 KB body limit (2 MB cap).
-- Venue lookups run on the server with an identifying User-Agent and a 24-hour cache; returned links are checked to point only at Google Maps and OpenStreetMap.
+- Google Maps links are read on the server: only `https` links on Google's own hosts are accepted, short links are expanded by following at most three redirects that must stay on Google, and the returned venue links are checked again in the browser.
 - API guards: method allow-list, `Content-Type` check, 16 KB body limit, capped conversation history, per-IP sliding-window **rate limiting** (429 + `Retry-After`), generic error messages (no internals leaked) and `Cache-Control: no-store`.
 - Security headers via `vercel.json`: a strict **CSP** (`default-src 'self'`, no inline scripts, no third-party images), HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` and `Permissions-Policy`.
 - External links use `rel="noopener noreferrer"`. No secrets are in the repo (`.env.example` only).
@@ -162,7 +162,7 @@ vercel env add GEMINI_API_KEY # paste your key (Production + Preview)
 vercel --prod
 ```
 
-The page takes venues from Google Maps links. The API also has venue search (`venues` mode, `check` and `search` actions) over OpenStreetMap, or Google Places when `GOOGLE_MAPS_API_KEY` is set; the page does not use it for now.
+Venues come from a Google Maps link the user pastes, so the exact place is always the one they chose; UtsavAI never lists or ranks businesses.
 
 Optionally set `GEMINI_MODEL` to use a different Gemini model. It can be a comma-separated list: a retry after an overload or stall moves to the next model. The default is `gemini-3.1-flash-lite,gemini-3-flash-preview`, the two fastest models in testing (about 3–5 s per request).
 
@@ -177,7 +177,7 @@ Optionally set `GEMINI_MODEL` to use a different Gemini model. It can be a comma
 
 ## Tech stack
 
-React 19 · TypeScript · Vite · Vitest · Testing Library · axe-core · lucide icons · Fontsource · Google Gemini API (text + vision) · Vercel Functions · OpenStreetMap (Nominatim and Photon) · Google Maps & Google Calendar links · WhatsApp click-to-chat
+React 19 · TypeScript · Vite · Vitest · Testing Library · axe-core · lucide icons · Fontsource · Google Gemini API (text + vision) · Vercel Functions · Google Maps & Google Calendar links · WhatsApp click-to-chat
 
 ---
 

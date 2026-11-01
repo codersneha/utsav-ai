@@ -362,36 +362,41 @@ describe('handleGenerate — sections, photos and venues', () => {
     expect(res.status).toBe(400);
   });
 
-  it('looks up venues without the AI key and caches them', async () => {
+  it('reads a venue from a Google Maps link without the AI key, and caches it', async () => {
     const mapFetch = vi.fn(
       async () =>
-        new Response(
-          JSON.stringify([{ name: 'Rajbari', lat: '22.5', lon: '88.3', osm_type: 'node', osm_id: 7 }]),
-          {
-            status: 200,
-          },
-        ),
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://www.google.com/maps/place/Rajbari/@22.5,88.3,17z' },
+        }),
     );
     const d = deps({ apiKey: undefined, mapFetch: mapFetch as unknown as typeof fetch });
-    const body = { mode: 'venues', action: 'check', name: 'Rajbari', city: 'Kolkata' };
+    const body = { mode: 'venues', action: 'link', url: 'https://maps.app.goo.gl/abc' };
     const res = await handleGenerate(post(body), d);
     expect(res.status).toBe(200);
     expect((await res.json()).venues[0].name).toBe('Rajbari');
-    const calls = mapFetch.mock.calls.length;
     expect((await (await handleGenerate(post(body), d)).json()).cached).toBe(true);
-    expect(mapFetch).toHaveBeenCalledTimes(calls);
+    expect(mapFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects bad venue requests and reports unknown cities', async () => {
-    const mapFetch = (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
-    expect(
-      (await handleGenerate(post({ mode: 'venues', action: 'drop', city: 'Kolkata' }), deps())).status,
-    ).toBe(400);
+  it('rejects bad venue requests and links that are not Google Maps places', async () => {
+    const venue = (body: object) => handleGenerate(post({ mode: 'venues', ...body }), deps());
+    expect((await venue({ action: 'search', city: 'Kolkata' })).status).toBe(400);
+    expect((await venue({ action: 'link', url: 'http://www.google.com/maps/place/X/@1,2' })).status).toBe(
+      400,
+    );
+    expect((await venue({ action: 'link', url: 'https://example.com/somewhere' })).status).toBe(422);
+  });
+
+  it('reports a map outage as a gateway error', async () => {
+    const mapFetch = (async () => {
+      throw new Error('network down');
+    }) as unknown as typeof fetch;
     const res = await handleGenerate(
-      post({ mode: 'venues', action: 'search', city: 'Atlantis' }),
+      post({ mode: 'venues', action: 'link', url: 'https://maps.app.goo.gl/abc' }),
       deps({ mapFetch }),
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(502);
   });
 });
 
