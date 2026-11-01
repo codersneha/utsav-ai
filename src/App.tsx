@@ -4,21 +4,84 @@ import { MarigoldMark, Toran } from './components/Brand';
 import { Landing } from './components/Landing';
 import { PlanReadiness } from './components/PlanToolbar';
 import { PlannerForm } from './components/PlannerForm';
-import { usePlanner } from './hooks/usePlanner';
+import { usePlanner, type Planner } from './hooks/usePlanner';
 import type { EventDetails } from './types';
 
 const PlanView = lazy(() => import('./components/PlanView'));
+
+function SiteHeader({ planner, showReadiness }: { planner: Planner; showReadiness: boolean }) {
+  return (
+    <header className="site-header no-print">
+      <div className="container">
+        <p className="logo">
+          <MarigoldMark />
+          <span>
+            Utsav<em>AI</em>
+          </span>
+        </p>
+        {showReadiness && planner.plan && (
+          <PlanReadiness
+            plan={planner.plan}
+            timelineDone={planner.timeline.done}
+            vendors={planner.vendors.entries}
+          />
+        )}
+      </div>
+      <Toran />
+    </header>
+  );
+}
+
+/** Offers to open a plan someone shared by link. */
+function SharedPlanBanner({ planner }: { planner: Planner }) {
+  const shared = planner.shared.details;
+  if (!shared) return null;
+  return (
+    <div className="card banner-card" role="region" aria-label="Shared plan">
+      <p>
+        <Share2 size={18} aria-hidden="true" /> Someone shared a plan with you:{' '}
+        <strong>{shared.title || shared.eventType}</strong> in {shared.city}.
+        {planner.plan ? ' Opening it replaces your current plan.' : ''}
+      </p>
+      <div className="actions">
+        <button type="button" className="btn primary" onClick={planner.shared.open}>
+          Open shared plan
+        </button>
+        <button type="button" className="btn" onClick={planner.shared.dismiss}>
+          Not now
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const SiteFooter = () => (
+  <footer className="site-footer no-print">
+    <div className="container">
+      <p>
+        UtsavAI · Built for PromptWars Virtual · AI by Google Gemini · Amounts are estimates, not quotes ·
+        Your plan stays in this browser.
+      </p>
+    </div>
+  </footer>
+);
+
+/** Fields the AI read from the user's description, waiting in the form for them to check. */
+interface Draft {
+  fields: Partial<EventDetails>;
+  intro: string;
+  key: number;
+}
+
+const filledIntro = (count: number) =>
+  `AI filled ${count} detail${count === 1 ? '' : 's'} from your description — please check them, then continue.`;
 
 export default function App() {
   const planner = usePlanner();
   const { plan, details } = planner;
   const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState('');
-  const [draft, setDraft] = useState<{ fields: Partial<EventDetails>; intro: string; key: number }>({
-    fields: {},
-    intro: '',
-    key: 0,
-  });
+  const [draft, setDraft] = useState<Draft>({ fields: {}, intro: '', key: 0 });
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const focusPlan = () => requestAnimationFrame(() => headingRef.current?.focus());
@@ -42,12 +105,7 @@ export default function App() {
   };
 
   const handleExtracted = (fields: Partial<EventDetails>) => {
-    const count = Object.keys(fields).length;
-    setDraft((d) => ({
-      fields,
-      intro: `AI filled ${count} detail${count === 1 ? '' : 's'} from your description — please check them, then continue.`,
-      key: d.key + 1,
-    }));
+    setDraft((d) => ({ fields, intro: filledIntro(Object.keys(fields).length), key: d.key + 1 }));
     requestAnimationFrame(() => {
       document.getElementById('plan-form')?.scrollIntoView?.({ block: 'start' });
       document.getElementById('form-title')?.focus();
@@ -67,24 +125,7 @@ export default function App() {
       <a href="#main" className="skip-link">
         Skip to main content
       </a>
-      <header className="site-header no-print">
-        <div className="container">
-          <p className="logo">
-            <MarigoldMark />
-            <span>
-              Utsav<em>AI</em>
-            </span>
-          </p>
-          {plan && !showForm && (
-            <PlanReadiness
-              plan={plan}
-              timelineDone={planner.timeline.done}
-              vendors={planner.vendors.entries}
-            />
-          )}
-        </div>
-        <Toran />
-      </header>
+      <SiteHeader planner={planner} showReadiness={!showForm} />
       <main id="main" className="container">
         {plan && (
           <h1 ref={headingRef} tabIndex={-1} className="sr-only">
@@ -94,24 +135,7 @@ export default function App() {
         <p className="sr-only" role="status" aria-live="polite">
           {status}
         </p>
-
-        {planner.shared.details && (
-          <div className="card banner-card" role="region" aria-label="Shared plan">
-            <p>
-              <Share2 size={18} aria-hidden="true" /> Someone shared a plan with you:{' '}
-              <strong>{planner.shared.details.title || planner.shared.details.eventType}</strong> in{' '}
-              {planner.shared.details.city}.{plan ? ' Opening it replaces your current plan.' : ''}
-            </p>
-            <div className="actions">
-              <button type="button" className="btn primary" onClick={planner.shared.open}>
-                Open shared plan
-              </button>
-              <button type="button" className="btn" onClick={planner.shared.dismiss}>
-                Not now
-              </button>
-            </div>
-          </div>
-        )}
+        <SharedPlanBanner planner={planner} />
 
         {showForm ? (
           <>
@@ -135,14 +159,7 @@ export default function App() {
           </Suspense>
         )}
       </main>
-      <footer className="site-footer no-print">
-        <div className="container">
-          <p>
-            UtsavAI · Built for PromptWars Virtual · AI by Google Gemini · Amounts are estimates, not quotes ·
-            Your plan stays in this browser.
-          </p>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }
