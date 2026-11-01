@@ -25,6 +25,7 @@ import { formatInr } from '../lib/plan';
 import { VenuePanel } from './VenuePanel';
 import {
   VENDOR_STATUSES,
+  type BudgetLine,
   type BudgetPlan,
   type Logistics,
   type VendorEntry,
@@ -166,118 +167,151 @@ export function ChecklistPanel(props: Props) {
   );
 }
 
-function VendorRow({ group, ...props }: Props & { group: VendorGroup }) {
-  const planned = props.budget.lines.find((l) => l.id === group.budgetId);
+type RowProps = Props & { group: VendorGroup };
+
+/** The budget line a vendor is paid from, unless an earlier vendor already shares it. */
+function plannedFor({ group, groups, budget }: RowProps) {
+  const planned = budget.lines.find((l) => l.id === group.budgetId);
   // A line shared with an earlier vendor (e.g. the cake comes out of catering) isn't this vendor's alone.
-  const sharedWith = props.groups.find((g) => g.budgetId === group.budgetId && g.id !== group.id);
-  const shared = sharedWith && props.groups.indexOf(sharedWith) < props.groups.indexOf(group);
+  const sharedWith = groups.find((g) => g.budgetId === group.budgetId && g.id !== group.id);
+  const shared = Boolean(sharedWith && groups.indexOf(sharedWith) < groups.indexOf(group));
+  return { planned, shared };
+}
+
+function budgetNote(planned: BudgetLine | undefined, shared: boolean): string {
+  if (!planned) return 'No budget line';
+  return shared
+    ? `Part of the ${planned.label.toLowerCase()} budget`
+    : `Budget ~${formatInr(planned.amount)}`;
+}
+
+/** The collapsed row: vendor, budget, best quote, task progress and booking stage. */
+function VendorSummary(props: RowProps) {
+  const { group } = props;
+  const { planned, shared } = plannedFor(props);
   const quotes = summariseQuotes(props.entries, group.id);
   const mine = props.entries.filter((e) => e.groupId === group.id);
-  const questions = props.logistics?.vendors[group.id]?.questions ?? [];
-  const fromAi = props.logistics?.source === 'gemini';
   const tasksDone = group.items.filter((i) => props.done[i.id]).length;
   const stage = vendorStage(mine, tasksDone);
   const Icon = ICONS[group.id] ?? Sparkles;
   const percent = group.items.length === 0 ? 0 : Math.round((tasksDone / group.items.length) * 100);
+  return (
+    <summary>
+      <span className="icon-badge" aria-hidden="true">
+        <Icon size={18} />
+      </span>
+      <span className="vendor-row-title">
+        <strong id={`vendor-${group.id}`}>{group.vendor}</strong>
+        <span className="muted small">
+          {budgetNote(planned, shared)}
+          {quotes.lowest > 0 && ` · best quote ${formatInr(quotes.lowest)}`}
+          {mine.length > 0 && ` · ${mine.length} contact${mine.length > 1 ? 's' : ''}`}
+        </span>
+      </span>
+      <span className="vendor-row-progress" aria-hidden="true">
+        <span className="bar">
+          <span style={{ width: `${percent}%` }} />
+        </span>
+        <span className="small">
+          {tasksDone}/{group.items.length}
+        </span>
+      </span>
+      <span className={`stage stage-${stage}`}>{STAGE_LABELS[stage]}</span>
+      <ChevronDown className="chev" size={18} aria-hidden="true" />
+    </summary>
+  );
+}
 
+/** The vendor's checklist and the AI's questions to ask them. */
+function TodoColumn({ group, ...props }: RowProps) {
+  const questions = props.logistics?.vendors[group.id]?.questions ?? [];
+  const fromAi = props.logistics?.source === 'gemini';
+  return (
+    <div className="vendor-col">
+      <h4 className="col-title">To do</h4>
+      <fieldset>
+        <legend className="sr-only">{group.vendor} checklist</legend>
+        <ul className="plain">
+          {group.items.map((item) => (
+            <li key={item.id}>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(props.done[item.id])}
+                  onChange={() => props.onToggle(item.id)}
+                />
+                <span>
+                  {item.task}
+                  {item.ai && <span className="badge ai">✨ AI</span>}
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </fieldset>
+      {questions.length > 0 && (
+        <div className="questions">
+          <h4 className="col-title">
+            <MessageCircleQuestion size={16} aria-hidden="true" /> Questions to ask{' '}
+            {fromAi && <span className="badge ai">✨ AI</span>}
+          </h4>
+          <ul>
+            {questions.map((q) => (
+              <li key={q}>{q}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {props.logisticsLoading && <p className="muted small">Gemini is preparing questions…</p>}
+    </div>
+  );
+}
+
+/** The user's own vendor contacts and quotes, compared with the estimate. */
+function ContactsColumn(props: RowProps) {
+  const { group } = props;
+  const { planned } = plannedFor(props);
+  const quotes = summariseQuotes(props.entries, group.id);
+  const mine = props.entries.filter((e) => e.groupId === group.id);
+  const over = planned !== undefined && quotes.lowest > planned.amount;
+  return (
+    <div className="vendor-col">
+      <h4 className="col-title">Your contacts</h4>
+      {planned && quotes.lowest > 0 && (
+        <p className={`small ${over ? 'negative' : 'positive'}`}>
+          Best quote {formatInr(quotes.lowest)} is {over ? 'over' : 'within'} the {formatInr(planned.amount)}{' '}
+          estimate.
+        </p>
+      )}
+      {mine.length === 0 && <p className="muted small">No contacts yet — add the vendors you talk to.</p>}
+      <ul className="plain contacts">
+        {mine.map((entry) => (
+          <ContactCard key={entry.id} entry={entry} {...props} />
+        ))}
+      </ul>
+      <AddContactForm groupId={group.id} vendor={group.vendor} onAdd={props.onAddVendor} />
+      <a
+        className="maps-link small"
+        href={mapsSearchUrl(group.searchTerm, props.city)}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <MapPin size={14} aria-hidden="true" /> Find {group.vendor.toLowerCase()} near {props.city} on Google
+        Maps
+        <span className="sr-only"> (opens in a new tab)</span>
+      </a>
+    </div>
+  );
+}
+
+function VendorRow(props: RowProps) {
   return (
     <li>
-      <details className="vendor-row card" aria-labelledby={`vendor-${group.id}`}>
-        <summary>
-          <span className="icon-badge" aria-hidden="true">
-            <Icon size={18} />
-          </span>
-          <span className="vendor-row-title">
-            <strong id={`vendor-${group.id}`}>{group.vendor}</strong>
-            <span className="muted small">
-              {!planned
-                ? 'No budget line'
-                : shared
-                  ? `Part of the ${planned.label.toLowerCase()} budget`
-                  : `Budget ~${formatInr(planned.amount)}`}
-              {quotes.lowest > 0 && ` · best quote ${formatInr(quotes.lowest)}`}
-              {mine.length > 0 && ` · ${mine.length} contact${mine.length > 1 ? 's' : ''}`}
-            </span>
-          </span>
-          <span className="vendor-row-progress" aria-hidden="true">
-            <span className="bar">
-              <span style={{ width: `${percent}%` }} />
-            </span>
-            <span className="small">
-              {tasksDone}/{group.items.length}
-            </span>
-          </span>
-          <span className={`stage stage-${stage}`}>{STAGE_LABELS[stage]}</span>
-          <ChevronDown className="chev" size={18} aria-hidden="true" />
-        </summary>
-
+      <details className="vendor-row card" aria-labelledby={`vendor-${props.group.id}`}>
+        <VendorSummary {...props} />
         <div className="vendor-body">
-          <div className="vendor-col">
-            <h4 className="col-title">To do</h4>
-            <fieldset>
-              <legend className="sr-only">{group.vendor} checklist</legend>
-              <ul className="plain">
-                {group.items.map((item) => (
-                  <li key={item.id}>
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(props.done[item.id])}
-                        onChange={() => props.onToggle(item.id)}
-                      />
-                      <span>
-                        {item.task}
-                        {item.ai && <span className="badge ai">✨ AI</span>}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </fieldset>
-            {questions.length > 0 && (
-              <div className="questions">
-                <h4 className="col-title">
-                  <MessageCircleQuestion size={16} aria-hidden="true" /> Questions to ask{' '}
-                  {fromAi && <span className="badge ai">✨ AI</span>}
-                </h4>
-                <ul>
-                  {questions.map((q) => (
-                    <li key={q}>{q}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {props.logisticsLoading && <p className="muted small">Gemini is preparing questions…</p>}
-          </div>
-
-          <div className="vendor-col">
-            <h4 className="col-title">Your contacts</h4>
-            {planned && quotes.lowest > 0 && (
-              <p className={`small ${quotes.lowest > planned.amount ? 'negative' : 'positive'}`}>
-                Best quote {formatInr(quotes.lowest)} is {quotes.lowest > planned.amount ? 'over' : 'within'}{' '}
-                the {formatInr(planned.amount)} estimate.
-              </p>
-            )}
-            {mine.length === 0 && (
-              <p className="muted small">No contacts yet — add the vendors you talk to.</p>
-            )}
-            <ul className="plain contacts">
-              {mine.map((entry) => (
-                <ContactCard key={entry.id} entry={entry} {...props} />
-              ))}
-            </ul>
-            <AddContactForm groupId={group.id} vendor={group.vendor} onAdd={props.onAddVendor} />
-            <a
-              className="maps-link small"
-              href={mapsSearchUrl(group.searchTerm, props.city)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <MapPin size={14} aria-hidden="true" /> Find {group.vendor.toLowerCase()} near {props.city} on
-              Google Maps
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          </div>
+          <TodoColumn {...props} />
+          <ContactsColumn {...props} />
         </div>
       </details>
     </li>
