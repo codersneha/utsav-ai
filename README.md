@@ -75,11 +75,11 @@ Browser (React + TS, Vite)                        Vercel Function (Node)
 ```
 
 - `src/lib/`: pure, framework-free domain logic — budget & trade-offs, timeline & dependencies, checklist & quotes, change report, validation, prompts, AI-output parsing, calendar export.
-- `src/hooks/usePlanner.ts`: all plan state and actions in one hook; components stay presentational.
+- `src/hooks/`: `usePlanner` exposes every plan action; it is built from `usePlanStore` (everything saved in the browser, each value checked when read back), `useAiResource` (one cancellable AI request with its loading state) and `useVenueLink`. Components stay presentational.
 - `src/lib/culture/`: the tradition knowledge base (functions, palettes, décor, courses, dishes with per-plate costs); `validateMenu` keeps the AI inside it.
-- `src/server/`: Gemini REST client (timeouts, retry, model fallback, image input), OpenStreetMap venue lookups, rate limiter, LRU cache and a pure `handleGenerate(Request) → Response` with six modes: `ideas` (whole plan or one section), `logistics`, `ask`, `extract`, `vision`, `venues`.
+- `src/server/`: a pure `handleGenerate(Request) → Response` that only orchestrates — `jobs.ts` turns the untrusted body into a typed job (one small parser per mode), `runJob.ts` runs it against Gemini (one runner per mode), `venueRoute.ts` handles map lookups, and `http.ts` holds the shared response helpers. Around them: the Gemini REST client (timeouts, retry, model fallback, image input), the map lookups, the rate limiter and the LRU cache. Seven modes: `ideas` (whole plan or one section), `logistics`, `ask`, `extract`, `vision`, `menuScan`, `venues`.
 - `api/generate.ts`: a 5-line Vercel Function entry. The **API key stays on the server**.
-- `src/components/`: accessible React UI. The plan view is lazy-loaded.
+- `src/components/`: accessible React UI, one component per card or section. The planner form lives in `components/plannerForm/` (one file per step, shared field components, a single form-state object). The plan view is lazy-loaded and describes its tabs as data.
 
 ## Design
 
@@ -111,11 +111,11 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 
 ### ✅ Testing
 
-- **282 tests across 31 files** (Vitest + Testing Library), with about **96% line and 87% branch coverage** (`npm run coverage`).
+- **291 tests across 32 files** (Vitest + Testing Library), with about **96% line and 84% branch coverage** (`npm run coverage`).
 - Unit tests: budget maths (exact sums, priority boosts, user overrides, guest impact, trade-offs that really fix the plan), timeline (compression, priorities, dependencies, slippage alerts, custom tasks), checklist & quote summaries, the change report (including the explainer's "50 more guests, smaller budget, two weeks earlier" case), validation, prompts, AI-output parsing, storage guards, calendar export, rate limiter and cache.
 - Culture tests pin the facts: the Bengali wedding is served in the right course order and never as a buffet, vegetarian-only menus have no fish or meat, a reception-only plan has no haldi, invented dishes are dropped, and Jain guests always get a safe choice.
 - Budget and planning tests: menus get richer with the food budget and never drop must-have dishes, AI menus that overspend are trimmed, dishes stay in serving order, the guest ledger counts and weights replies (and its CSV export neutralises spreadsheet formulas), what-if costs match the plan, and amounts like “20 lakh” or “1.5 crore” are read correctly.
-- API tests: every guard (405/413/415/400/429/503/502), all six modes (including section-only regeneration, image signature checks and venue lookups with polite request spacing), refinement, conversation-history capping, caching, retries and model fallback — with a mocked Gemini.
+- API tests: every guard (405/413/415/400/429/503/502), all seven modes (including section-only regeneration, image signature checks and venue lookups with polite request spacing), refinement, conversation-history capping, caching, retries and model fallback — with a mocked Gemini.
 - **Contract tests** feed the real server handler's response into the real browser client, so the two can't drift apart.
 - Integration tests drive each user flow: sliders rebalancing the budget around a locked category, removing money to unallocated and placing it, share link and the print-only summary, changing only the menu keeps the décor, saving a venue from a Google Maps link, reading a photo and applying its colours to the décor only, describe-your-event → wizard → overview → ideas → budget edits & trade-offs → timeline tasks → vendor records → refine → chat proposal → apply → undo → share link → export, plus one-click samples, fallbacks, corrupt storage and upgrading old saved plans.
 - **Automated accessibility tests** run axe-core at every major UI state.
@@ -134,7 +134,9 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 ### 🧹 Code quality
 
 - TypeScript `strict`, ESLint (typescript-eslint, react-hooks, **jsx-a11y strict**) and Prettier.
-- Small, single-purpose modules. Pure functions are separated from UI and I/O, and side effects are injected (`fetchImpl`, `now`, `limiter`) for testability.
+- Small, single-purpose modules and functions. Rule-based logic is written as data plus small functions: next steps are an ordered list of rules, the change report is a list of describers, AI-extracted fields are checked by a table of field readers, and the plan's tabs are a list of definitions.
+- One place for each rule: `budgetFor(details)` is the only way a plan's budget is built, and `validateEventDetails` guards both the form and the API.
+- Pure functions are separated from UI and I/O, and side effects are injected (`fetchImpl`, `now`, `limiter`) for testability.
 
 ## Run locally
 
