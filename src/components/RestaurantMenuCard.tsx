@@ -1,5 +1,5 @@
 import { ExternalLink, ImagePlus, Keyboard, ScanLine, Sparkles } from 'lucide-react';
-import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { scanMenu, type MenuRequest } from '../lib/api';
 import { isPartyOrder } from '../lib/guards';
@@ -36,11 +36,234 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
-const MODE_LABELS: Record<MenuSource, string> = {
-  photos: 'Menu photos',
-  text: 'Type or paste it',
-  estimate: 'Estimate for me',
+const MODES: Record<MenuSource, { label: string; icon: typeof ScanLine }> = {
+  photos: { label: 'Menu photos', icon: ScanLine },
+  text: { label: 'Type or paste it', icon: Keyboard },
+  estimate: { label: 'Estimate for me', icon: Sparkles },
 };
+
+const errorText = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
+
+/** Where the dishes in an order came from, in a sentence. */
+function sourceNote(order: PartyOrder, place: string): string {
+  if (order.source === 'estimate')
+    return `Estimated from ${order.itemsRead} typical dishes — not a real menu. Add the ${place}’s menu for exact prices.`;
+  if (order.source === 'text') return `Read ${order.itemsRead} dishes from the menu you typed.`;
+  return `Read ${order.itemsRead} dishes from ${order.pages} menu ${order.pages === 1 ? 'photo' : 'photos'}.`;
+}
+
+function ModeTabs({
+  modes,
+  mode,
+  onPick,
+}: {
+  modes: MenuSource[];
+  mode: MenuSource;
+  onPick: (m: MenuSource) => void;
+}) {
+  return (
+    <div className="segmented" role="group" aria-label="How to add the menu">
+      {modes.map((m) => {
+        const { label, icon: Icon } = MODES[m];
+        return (
+          <button
+            key={m}
+            type="button"
+            className={`segment${mode === m ? ' active' : ''}`}
+            aria-pressed={mode === m}
+            onClick={() => onPick(m)}
+          >
+            <Icon size={16} aria-hidden="true" /> {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function FilePicker({
+  label,
+  icon,
+  primary,
+  busy,
+  onFiles,
+}: {
+  label: string;
+  icon: ReactNode;
+  primary?: boolean;
+  busy: boolean;
+  onFiles: (e: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <label className={`btn${primary ? ' primary' : ''} upload-btn`}>
+      {icon} {label}
+      <input
+        type="file"
+        multiple
+        accept={ACCEPTED_TYPES.join(',')}
+        className="sr-only"
+        onChange={onFiles}
+        disabled={busy}
+      />
+    </label>
+  );
+}
+
+function PhotoSteps({
+  venue,
+  city,
+  busy,
+  hasPhotos,
+  onFiles,
+}: {
+  venue: string;
+  city: string;
+  busy: boolean;
+  hasPhotos: boolean;
+  onFiles: (e: ChangeEvent<HTMLInputElement>, more: boolean) => void;
+}) {
+  const menuSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${venue} ${city} menu`)}`;
+  const mainLabel = busy ? 'Reading the menu…' : hasPhotos ? 'Read a new menu' : 'Add menu photos';
+  return (
+    <ol className="menu-steps">
+      <li>
+        <a href={menuSearch} target="_blank" rel="noopener noreferrer">
+          Open {venue} on Google Maps <ExternalLink size={14} aria-hidden="true" />
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+        , then open <strong>Menu</strong> and screenshot each page — or photograph the printed menu.
+      </li>
+      <li>
+        <div className="menu-upload">
+          <FilePicker
+            primary
+            label={mainLabel}
+            icon={<ScanLine size={18} aria-hidden="true" />}
+            busy={busy}
+            onFiles={(e) => onFiles(e, false)}
+          />
+          {hasPhotos && (
+            <FilePicker
+              label="Add more pages"
+              icon={<ImagePlus size={18} aria-hidden="true" />}
+              busy={busy}
+              onFiles={(e) => onFiles(e, true)}
+            />
+          )}
+        </div>
+        <p className="hint">
+          Select all the pages at once — up to {MAX_PAGES} photos. Photos are not stored.
+        </p>
+      </li>
+    </ol>
+  );
+}
+
+function MenuTextForm({
+  place,
+  busy,
+  onBuild,
+  onError,
+}: {
+  place: string;
+  busy: boolean;
+  onBuild: (text: string) => void;
+  onError: (message: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const menu = text.trim();
+    if (menu.length < LIMITS.menuTextMin) return onError('Paste a few dishes with their prices.');
+    onBuild(menu);
+  };
+  return (
+    <form className="menu-text" onSubmit={submit}>
+      <label htmlFor="menu-text">Menu, with prices</label>
+      <textarea
+        id="menu-text"
+        rows={6}
+        value={text}
+        maxLength={LIMITS.menuTextMax}
+        placeholder={'e.g.\nPaneer tikka 280\nChicken biryani (full) 420\nCold coffee 160'}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <p className="hint">Copy it from Zomato, Swiggy or the {place}’s website — any layout works.</p>
+      <button type="submit" className="btn primary" disabled={busy}>
+        <Keyboard size={16} aria-hidden="true" /> {busy ? 'Building the order…' : 'Build the order'}
+      </button>
+    </form>
+  );
+}
+
+function OrderTable({ order }: { order: PartyOrder }) {
+  const categories = [...new Set(order.lines.map((l) => l.category))];
+  return (
+    <div className="table-wrap">
+      <table className="order-table">
+        <caption className="sr-only">Suggested order for {order.guests} guests</caption>
+        <thead>
+          <tr>
+            <th scope="col">Dish</th>
+            <th scope="col">Qty</th>
+            <th scope="col">Price</th>
+            <th scope="col">Cost</th>
+          </tr>
+        </thead>
+        {categories.map((c) => (
+          <tbody key={c}>
+            <tr className="order-group">
+              <th scope="rowgroup" colSpan={4}>
+                {CATEGORY_LABELS[c]}
+              </th>
+            </tr>
+            {order.lines
+              .filter((l) => l.category === c)
+              .map((l) => (
+                <tr key={l.name}>
+                  <th scope="row">
+                    {l.name}{' '}
+                    <span className={`diet ${l.veg ? 'veg' : 'nonveg'}`}>{l.veg ? 'Veg' : 'Non-veg'}</span>
+                    <span className="muted small"> · serves {l.serves}</span>
+                  </th>
+                  <td>× {l.quantity}</td>
+                  <td>{formatInr(l.price)}</td>
+                  <td>{formatInr(l.cost)}</td>
+                </tr>
+              ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  );
+}
+
+function OrderView({ order, place }: { order: PartyOrder; place: string }) {
+  const totals: [string, number][] = [
+    ['Order total', order.total],
+    ['Per guest', order.perHead],
+    ['Food budget', order.budget],
+  ];
+  return (
+    <div className="party-order">
+      {order.source === 'estimate' && <p className="badge subtle">Estimated prices</p>}
+      <div className="menu-budget" role="group" aria-label="Order cost">
+        {totals.map(([label, amount]) => (
+          <div key={label}>
+            <span className="eyebrow">{label}</span>
+            <strong>{formatInr(amount)}</strong>
+          </div>
+        ))}
+      </div>
+      <OrderTable order={order} />
+      <p className="hint">
+        {sourceNote(order, place)}
+        {order.trimmed ? ' Quantities were reduced to fit your budget.' : ''} {order.note} Check taxes and the
+        service charge with the {place}.
+      </p>
+    </div>
+  );
+}
 
 /**
  * At a restaurant or café the venue's own menu is the menu, so no menu is
@@ -56,7 +279,6 @@ export function RestaurantMenuCard({ details, catering }: Props) {
   const modes: MenuSource[] = venue ? ['photos', 'text'] : ['text', 'estimate'];
   const [saved, setSaved] = usePersistentState<Saved | null>('restaurantMenu', null, isSaved);
   const [picked, setPicked] = useState<MenuSource | null>(null);
-  const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const order = saved && saved.venue === venue ? saved.order : null;
@@ -72,7 +294,7 @@ export function RestaurantMenuCard({ details, catering }: Props) {
       if (result.order) setSaved({ venue, order: { ...result.order, pages } });
       else setError(result.error ?? 'We couldn’t build an order from that menu.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'We couldn’t read that menu.');
+      setError(errorText(err, 'We couldn’t read that menu.'));
     } finally {
       setBusy(false);
     }
@@ -87,25 +309,16 @@ export function RestaurantMenuCard({ details, catering }: Props) {
     try {
       const images = await Promise.all(files.map((f) => prepareImage(f, MENU_EDGE)));
       const keep = more && fromPhotos ? order : null;
-      await build(
-        { source: 'photos', images, known: keep?.items ?? [] },
-        (keep ? keep.pages : 0) + images.length,
-      );
+      await build({ source: 'photos', images, known: keep?.items ?? [] }, (keep?.pages ?? 0) + images.length);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'We couldn’t read those photos.');
+      setError(errorText(err, 'We couldn’t read those photos.'));
     }
   };
 
-  const onText = (e: FormEvent) => {
-    e.preventDefault();
-    if (text.trim().length < LIMITS.menuTextMin) return setError('Paste a few dishes with their prices.');
-    void build({ source: 'text', text: text.trim() }, 0);
+  const pick = (m: MenuSource) => {
+    setPicked(m);
+    setError('');
   };
-
-  const menuSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    `${venue} ${details.city} menu`,
-  )}`;
-  const categories = order ? [...new Set(order.lines.map((l) => l.category))] : [];
 
   return (
     <section className="card restaurant-menu" aria-labelledby="restaurant-menu-heading">
@@ -121,92 +334,25 @@ export function RestaurantMenuCard({ details, catering }: Props) {
           : `A ${place} serves its own food, so we don’t invent a menu. Choose your ${place} in the Venue card (Vendors tab) to get an order from its real menu — or type a menu, or let us estimate one from typical prices. Food budget: ${formatInr(budget)} for ${details.guests} guests.`}
       </p>
 
-      <div className="segmented" role="group" aria-label="How to add the menu">
-        {modes.map((m) => (
-          <button
-            key={m}
-            type="button"
-            className={`segment${mode === m ? ' active' : ''}`}
-            aria-pressed={mode === m}
-            onClick={() => {
-              setPicked(m);
-              setError('');
-            }}
-          >
-            {m === 'photos' ? (
-              <ScanLine size={16} aria-hidden="true" />
-            ) : m === 'text' ? (
-              <Keyboard size={16} aria-hidden="true" />
-            ) : (
-              <Sparkles size={16} aria-hidden="true" />
-            )}{' '}
-            {MODE_LABELS[m]}
-          </button>
-        ))}
-      </div>
+      <ModeTabs modes={modes} mode={mode} onPick={pick} />
 
       {mode === 'photos' && (
-        <ol className="menu-steps">
-          <li>
-            <a href={menuSearch} target="_blank" rel="noopener noreferrer">
-              Open {venue} on Google Maps <ExternalLink size={14} aria-hidden="true" />
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-            , then open <strong>Menu</strong> and screenshot each page — or photograph the printed menu.
-          </li>
-          <li>
-            <div className="menu-upload">
-              <label className="btn primary upload-btn">
-                <ScanLine size={18} aria-hidden="true" />{' '}
-                {busy ? 'Reading the menu…' : fromPhotos ? 'Read a new menu' : 'Add menu photos'}
-                <input
-                  type="file"
-                  multiple
-                  accept={ACCEPTED_TYPES.join(',')}
-                  className="sr-only"
-                  onChange={(e) => void onFiles(e, false)}
-                  disabled={busy}
-                />
-              </label>
-              {fromPhotos && (
-                <label className="btn upload-btn">
-                  <ImagePlus size={18} aria-hidden="true" /> Add more pages
-                  <input
-                    type="file"
-                    multiple
-                    accept={ACCEPTED_TYPES.join(',')}
-                    className="sr-only"
-                    onChange={(e) => void onFiles(e, true)}
-                    disabled={busy}
-                  />
-                </label>
-              )}
-            </div>
-            <p className="hint">
-              Select all the pages at once — up to {MAX_PAGES} photos. Photos are not stored.
-            </p>
-          </li>
-        </ol>
+        <PhotoSteps
+          venue={venue}
+          city={details.city}
+          busy={busy}
+          hasPhotos={fromPhotos}
+          onFiles={(e, more) => void onFiles(e, more)}
+        />
       )}
-
       {mode === 'text' && (
-        <form className="menu-text" onSubmit={onText}>
-          <label htmlFor="menu-text">Menu, with prices</label>
-          <textarea
-            id="menu-text"
-            rows={6}
-            value={text}
-            maxLength={LIMITS.menuTextMax}
-            placeholder={'e.g.\nPaneer tikka 280\nChicken biryani (full) 420\nCold coffee 160'}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <p className="hint">Copy it from Zomato, Swiggy or the {place}’s website — any layout works.</p>
-          <button type="submit" className="btn primary" disabled={busy}>
-            <Keyboard size={16} aria-hidden="true" /> {busy ? 'Building the order…' : 'Build the order'}
-          </button>
-        </form>
+        <MenuTextForm
+          place={place}
+          busy={busy}
+          onBuild={(text) => void build({ source: 'text', text }, 0)}
+          onError={setError}
+        />
       )}
-
       {mode === 'estimate' && (
         <div className="menu-estimate">
           <p className="hint">
@@ -226,72 +372,7 @@ export function RestaurantMenuCard({ details, catering }: Props) {
 
       <div aria-live="polite">
         {error && <p className="notice warning">{error}</p>}
-        {order && (
-          <div className="party-order">
-            {order.source === 'estimate' && <p className="badge subtle">Estimated prices</p>}
-            <div className="menu-budget" role="group" aria-label="Order cost">
-              <div>
-                <span className="eyebrow">Order total</span>
-                <strong>{formatInr(order.total)}</strong>
-              </div>
-              <div>
-                <span className="eyebrow">Per guest</span>
-                <strong>{formatInr(order.perHead)}</strong>
-              </div>
-              <div>
-                <span className="eyebrow">Food budget</span>
-                <strong>{formatInr(order.budget)}</strong>
-              </div>
-            </div>
-            <div className="table-wrap">
-              <table className="order-table">
-                <caption className="sr-only">Suggested order for {order.guests} guests</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Dish</th>
-                    <th scope="col">Qty</th>
-                    <th scope="col">Price</th>
-                    <th scope="col">Cost</th>
-                  </tr>
-                </thead>
-                {categories.map((c) => (
-                  <tbody key={c}>
-                    <tr className="order-group">
-                      <th scope="rowgroup" colSpan={4}>
-                        {CATEGORY_LABELS[c]}
-                      </th>
-                    </tr>
-                    {order.lines
-                      .filter((l) => l.category === c)
-                      .map((l) => (
-                        <tr key={l.name}>
-                          <th scope="row">
-                            {l.name}{' '}
-                            <span className={`diet ${l.veg ? 'veg' : 'nonveg'}`}>
-                              {l.veg ? 'Veg' : 'Non-veg'}
-                            </span>
-                            <span className="muted small"> · serves {l.serves}</span>
-                          </th>
-                          <td>× {l.quantity}</td>
-                          <td>{formatInr(l.price)}</td>
-                          <td>{formatInr(l.cost)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                ))}
-              </table>
-            </div>
-            <p className="hint">
-              {order.source === 'estimate'
-                ? `Estimated from ${order.itemsRead} typical dishes — not a real menu. Add the ${place}’s menu for exact prices.`
-                : order.source === 'text'
-                  ? `Read ${order.itemsRead} dishes from the menu you typed.`
-                  : `Read ${order.itemsRead} dishes from ${order.pages} menu ${order.pages === 1 ? 'photo' : 'photos'}.`}
-              {order.trimmed ? ' Quantities were reduced to fit your budget.' : ''} {order.note} Check taxes
-              and the service charge with the {place}.
-            </p>
-          </div>
-        )}
+        {order && <OrderView order={order} place={place} />}
       </div>
     </section>
   );
