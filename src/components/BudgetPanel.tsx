@@ -1,5 +1,5 @@
 import { Check, Lock, LockOpen, MinusCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   allocateRemainder,
   describeShift,
@@ -8,6 +8,7 @@ import {
   releaseCategory,
   suggestTradeOffs,
   summariseSpend,
+  type TradeOff,
   type TradeOffAction,
 } from '../lib/budget';
 import { parseInr } from '../lib/money';
@@ -30,11 +31,200 @@ interface Props {
 
 const toAmount = (value: string) => Math.max(0, Math.round(Number(value) || 0));
 
+function BudgetStats({ budget, spent }: { budget: BudgetPlan; spent: number }) {
+  const stats: [string, number, string?][] = [
+    ['Total budget', budget.total],
+    ['Per guest', budget.perGuest],
+    ['Unallocated', budget.unallocated, budget.unallocated < 0 ? 'negative' : undefined],
+    ['Spent so far', spent],
+  ];
+  return (
+    <dl className="stats">
+      {stats.map(([label, amount, tone]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd className={tone}>{formatInr(amount)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function splitStatus(budget: BudgetPlan): ReactNode {
+  if (budget.unallocated === 0) {
+    return (
+      <>
+        <Check size={16} aria-hidden="true" /> Balanced — everything adds up to {formatInr(budget.total)}.
+      </>
+    );
+  }
+  return budget.unallocated > 0
+    ? `${formatInr(budget.unallocated)} is unallocated — place it below.`
+    : `Categories are ${formatInr(-budget.unallocated)} over the total budget.`;
+}
+
+/** One coloured bar for the whole split, with any unallocated money shown as a gap. */
+function SplitBar({ budget }: { budget: BudgetPlan }) {
+  return (
+    <div className="card split-card">
+      <div className="split-bar" aria-hidden="true">
+        {budget.lines.map((l, i) =>
+          l.amount > 0 ? (
+            <span
+              key={l.id}
+              style={{ flexGrow: l.amount, background: CHART_COLORS[i % CHART_COLORS.length] }}
+              title={`${l.label} ${l.percent}%`}
+            />
+          ) : null,
+        )}
+        {budget.unallocated > 0 && <span className="unallocated" style={{ flexGrow: budget.unallocated }} />}
+      </div>
+      <p className={`split-status${budget.unallocated === 0 ? ' ok' : ''}`} role="status">
+        {splitStatus(budget)}
+      </p>
+    </div>
+  );
+}
+
+/** Places unallocated money, or pulls an over-budget split back within the total. */
+function UnallocatedCard({
+  budget,
+  locks,
+  onApply,
+}: {
+  budget: BudgetPlan;
+  locks: string[];
+  onApply: (amounts: Record<string, number>) => void;
+}) {
+  const [target, setTarget] = useState('spread');
+  if (budget.unallocated === 0) return null;
+  if (budget.unallocated < 0) {
+    return (
+      <div className="card unallocated-card">
+        <div className="ask-row">
+          <p>Bring the categories back within the total, in proportion (locked ones stay as they are).</p>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => onApply(allocateRemainder(budget, 'spread', locks))}
+          >
+            Fit to budget
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="card unallocated-card">
+      <label htmlFor="allocate-target">Put the unallocated {formatInr(budget.unallocated)} into</label>
+      <div className="ask-row">
+        <select id="allocate-target" value={target} onChange={(e) => setTarget(e.target.value)}>
+          <option value="spread">All categories, in proportion</option>
+          {budget.lines.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={() => onApply(allocateRemainder(budget, target, locks))}
+        >
+          Allocate
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TradeOffs({ options, onApply }: { options: TradeOff[]; onApply: (action: TradeOffAction) => void }) {
+  if (options.length === 0) return null;
+  return (
+    <section className="card tradeoffs" aria-labelledby="tradeoffs-heading">
+      <h4 id="tradeoffs-heading">Your options — you choose</h4>
+      <ul>
+        {options.map((t) => (
+          <li key={t.id}>
+            <div>
+              <strong>{t.title}</strong>
+              <p className="hint">{t.detail}</p>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              aria-label={`Apply: ${t.title}`}
+              onClick={() => onApply(t.action)}
+            >
+              Apply
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Planned against actual spend, one editable row per category. */
+function SpendTable({
+  budget,
+  spent,
+  onChange,
+}: {
+  budget: BudgetPlan;
+  spent: Record<string, number>;
+  onChange: (id: string, amount: number) => void;
+}) {
+  return (
+    <section aria-labelledby="spend-heading" className="spend">
+      <h4 id="spend-heading">Track spending</h4>
+      <div className="table-scroll">
+        <table className="budget-table">
+          <caption className="sr-only">Planned and actual spend by category</caption>
+          <thead>
+            <tr>
+              <th scope="col">Category</th>
+              <th scope="col">Planned</th>
+              <th scope="col">Spent (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {budget.lines.map((line) => {
+              const value = spent[line.id] ?? 0;
+              return (
+                <tr key={line.id} className={value > line.amount ? 'over' : undefined}>
+                  <th scope="row">{line.label}</th>
+                  <td>{formatInr(line.amount)}</td>
+                  <td>
+                    <label className="sr-only" htmlFor={`spent-${line.id}`}>
+                      Amount spent on {line.label}
+                    </label>
+                    <input
+                      id={`spent-${line.id}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={500}
+                      className="spent-input"
+                      value={value || ''}
+                      placeholder="0"
+                      onChange={(e) => onChange(line.id, toAmount(e.target.value))}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 /** Budget split that stays balanced: sliders rebalance, locks protect, removed money waits as unallocated. */
 export function BudgetPanel(props: Props) {
   const { budget, eventType, guests, overrides, spent, locks } = props;
   const [shift, setShift] = useState('');
-  const [target, setTarget] = useState('spread');
   const summary = useMemo(() => summariseSpend(budget, spent), [budget, spent]);
   const tradeOffs = useMemo(
     () => suggestTradeOffs(eventType, budget, guests, overrides),
@@ -46,97 +236,17 @@ export function BudgetPanel(props: Props) {
     setShift(describeShift(budget, next));
     props.onSetAmounts(next);
   };
+  const resetSplit = () => {
+    setShift('Back to the suggested split.');
+    props.onApplyTradeOff({ kind: 'overrides', overrides: {} });
+  };
 
   return (
     <section aria-labelledby="budget-heading" className="budget">
       <h3 id="budget-heading">Budget breakdown</h3>
-      <dl className="stats">
-        <div>
-          <dt>Total budget</dt>
-          <dd>{formatInr(budget.total)}</dd>
-        </div>
-        <div>
-          <dt>Per guest</dt>
-          <dd>{formatInr(budget.perGuest)}</dd>
-        </div>
-        <div>
-          <dt>Unallocated</dt>
-          <dd className={budget.unallocated < 0 ? 'negative' : undefined}>{formatInr(budget.unallocated)}</dd>
-        </div>
-        <div>
-          <dt>Spent so far</dt>
-          <dd>{formatInr(summary.spent)}</dd>
-        </div>
-      </dl>
-
-      <div className="card split-card">
-        <div className="split-bar" aria-hidden="true">
-          {budget.lines.map((l, i) =>
-            l.amount > 0 ? (
-              <span
-                key={l.id}
-                style={{ flexGrow: l.amount, background: CHART_COLORS[i % CHART_COLORS.length] }}
-                title={`${l.label} ${l.percent}%`}
-              />
-            ) : null,
-          )}
-          {budget.unallocated > 0 && (
-            <span className="unallocated" style={{ flexGrow: budget.unallocated }} />
-          )}
-        </div>
-        <p className={`split-status${budget.unallocated === 0 ? ' ok' : ''}`} role="status">
-          {budget.unallocated === 0 ? (
-            <>
-              <Check size={16} aria-hidden="true" /> Balanced — everything adds up to{' '}
-              {formatInr(budget.total)}.
-            </>
-          ) : budget.unallocated > 0 ? (
-            `${formatInr(budget.unallocated)} is unallocated — place it below.`
-          ) : (
-            `Categories are ${formatInr(-budget.unallocated)} over the total budget.`
-          )}
-        </p>
-      </div>
-
-      {budget.unallocated !== 0 && (
-        <div className="card unallocated-card">
-          {budget.unallocated > 0 ? (
-            <>
-              <label htmlFor="allocate-target">
-                Put the unallocated {formatInr(budget.unallocated)} into
-              </label>
-              <div className="ask-row">
-                <select id="allocate-target" value={target} onChange={(e) => setTarget(e.target.value)}>
-                  <option value="spread">All categories, in proportion</option>
-                  {budget.lines.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => apply(allocateRemainder(budget, target, locks))}
-                >
-                  Allocate
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="ask-row">
-              <p>Bring the categories back within the total, in proportion (locked ones stay as they are).</p>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => apply(allocateRemainder(budget, 'spread', locks))}
-              >
-                Fit to budget
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      <BudgetStats budget={budget} spent={summary.spent} />
+      <SplitBar budget={budget} />
+      <UnallocatedCard budget={budget} locks={locks} onApply={apply} />
 
       <div className="split-head">
         <div>
@@ -147,14 +257,7 @@ export function BudgetPanel(props: Props) {
           </p>
         </div>
         {Object.keys(overrides).length > 0 && (
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => {
-              setShift('Back to the suggested split.');
-              props.onApplyTradeOff({ kind: 'overrides', overrides: {} });
-            }}
-          >
+          <button type="button" className="btn small" onClick={resetSplit}>
             Reset to suggested split
           </button>
         )}
@@ -208,72 +311,8 @@ export function BudgetPanel(props: Props) {
         )}
       </div>
 
-      {tradeOffs.length > 0 && (
-        <section className="card tradeoffs" aria-labelledby="tradeoffs-heading">
-          <h4 id="tradeoffs-heading">Your options — you choose</h4>
-          <ul>
-            {tradeOffs.map((t) => (
-              <li key={t.id}>
-                <div>
-                  <strong>{t.title}</strong>
-                  <p className="hint">{t.detail}</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn"
-                  aria-label={`Apply: ${t.title}`}
-                  onClick={() => props.onApplyTradeOff(t.action)}
-                >
-                  Apply
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section aria-labelledby="spend-heading" className="spend">
-        <h4 id="spend-heading">Track spending</h4>
-        <div className="table-scroll">
-          <table className="budget-table">
-            <caption className="sr-only">Planned and actual spend by category</caption>
-            <thead>
-              <tr>
-                <th scope="col">Category</th>
-                <th scope="col">Planned</th>
-                <th scope="col">Spent (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {budget.lines.map((line) => {
-                const value = spent[line.id] ?? 0;
-                return (
-                  <tr key={line.id} className={value > line.amount ? 'over' : undefined}>
-                    <th scope="row">{line.label}</th>
-                    <td>{formatInr(line.amount)}</td>
-                    <td>
-                      <label className="sr-only" htmlFor={`spent-${line.id}`}>
-                        Amount spent on {line.label}
-                      </label>
-                      <input
-                        id={`spent-${line.id}`}
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        step={500}
-                        className="spent-input"
-                        value={value || ''}
-                        placeholder="0"
-                        onChange={(e) => props.onSpentChange(line.id, toAmount(e.target.value))}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <TradeOffs options={tradeOffs} onApply={props.onApplyTradeOff} />
+      <SpendTable budget={budget} spent={spent} onChange={props.onSpentChange} />
     </section>
   );
 }
