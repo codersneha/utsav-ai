@@ -88,22 +88,16 @@ export async function generateText(
   }
 }
 
-async function attemptGenerate(
-  req: GeminiRequest,
-  fetchImpl: typeof fetch,
-  timeoutMs: number,
-): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const body = {
+/** The generateContent request body: system instruction, images, prompt and output settings. */
+function requestBody(req: GeminiRequest) {
+  const images = [...(req.image ? [req.image] : []), ...(req.images ?? [])];
+  return {
     systemInstruction: { parts: [{ text: req.systemInstruction }] },
     contents: [
       {
         role: 'user',
         parts: [
-          ...[...(req.image ? [req.image] : []), ...(req.images ?? [])].map((img) => ({
-            inlineData: { mimeType: img.mimeType, data: img.data },
-          })),
+          ...images.map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
           { text: req.prompt },
         ],
       },
@@ -119,31 +113,45 @@ async function attemptGenerate(
         : {}),
     },
   };
+}
 
+/** The answer's text, joined across parts. */
+async function responseText(res: Response): Promise<string> {
+  if (!res.ok)
+    throw new GeminiError(`Gemini responded with ${res.status}${await upstreamReason(res)}`, res.status);
+  const data = (await res.json()) as GeminiResponse;
+  const text = (data.candidates?.[0]?.content?.parts ?? [])
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim();
+  if (!text) throw new GeminiError('Gemini returned an empty response', 502);
+  return text;
+}
+
+/** Network failures and timeouts become GeminiErrors with a gateway status. */
+function asGeminiError(err: unknown): GeminiError {
+  if (err instanceof GeminiError) return err;
+  const aborted = err instanceof Error && err.name === 'AbortError';
+  return new GeminiError(aborted ? 'Gemini request timed out' : 'Gemini request failed', aborted ? 504 : 502);
+}
+
+async function attemptGenerate(
+  req: GeminiRequest,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl(`${BASE_URL}/${encodeURIComponent(req.model)}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': req.apiKey },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody(req)),
       signal: controller.signal,
     });
-    if (!res.ok) {
-      throw new GeminiError(`Gemini responded with ${res.status}${await upstreamReason(res)}`, res.status);
-    }
-    const data = (await res.json()) as GeminiResponse;
-    const text = (data.candidates?.[0]?.content?.parts ?? [])
-      .map((p) => p.text ?? '')
-      .join('')
-      .trim();
-    if (!text) throw new GeminiError('Gemini returned an empty response', 502);
-    return text;
+    return await responseText(res);
   } catch (err) {
-    if (err instanceof GeminiError) throw err;
-    const aborted = err instanceof Error && err.name === 'AbortError';
-    throw new GeminiError(
-      aborted ? 'Gemini request timed out' : 'Gemini request failed',
-      aborted ? 504 : 502,
-    );
+    throw asGeminiError(err);
   } finally {
     clearTimeout(timer);
   }
