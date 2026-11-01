@@ -8,7 +8,7 @@ import {
   Utensils,
   Wand2,
 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import {
   MENU_TIER_LABELS,
   ceremoniesFor,
@@ -294,212 +294,262 @@ function MenuCard({ details, ideas, catering }: { details: EventDetails; ideas: 
   );
 }
 
-/** Ceremonies with real photos, a course-by-course menu and extras — each part editable on its own. */
-export function IdeasPanel(props: Props) {
-  const { details, ideas, loading, busySection, notice } = props;
-  const [request, setRequest] = useState('');
-  const ceremonies = ceremoniesFor(details);
-  const tier = decorTier(details, props.decor);
-  const busy = (s: IdeasSection) => loading && (busySection === s || busySection === null);
-  const looks = details.eventType === 'wedding' ? [] : (ideas?.looks ?? []);
+const QUICK_REFINEMENTS = [
+  'More eco-friendly',
+  'Cheaper options',
+  'More traditional',
+  'Better for elders and kids',
+];
 
+function RefineForm({ loading, onRefine }: { loading: boolean; onRefine: (request: string) => void }) {
+  const [request, setRequest] = useState('');
+  const ready = request.trim().length >= 3;
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (request.trim().length < 3) return;
-    props.onRefine(request.trim());
+    if (!ready) return;
+    onRefine(request.trim());
     setRequest('');
   };
+  return (
+    <form className="refine" onSubmit={submit} aria-label="Refine ideas">
+      <label htmlFor="refine-input">Not quite right? Tell the AI what to change</label>
+      <div className="ask-row">
+        <input
+          id="refine-input"
+          value={request}
+          maxLength={LIMITS.refinementMax}
+          placeholder="e.g. our venue is a small terrace, and grandparents need seating"
+          onChange={(e) => setRequest(e.target.value)}
+        />
+        <button type="submit" className="btn primary" disabled={loading || !ready}>
+          Refine
+        </button>
+      </div>
+      <div className="chips" role="group" aria-label="Quick refinements">
+        {QUICK_REFINEMENTS.map((r) => (
+          <button key={r} type="button" className="chip" disabled={loading} onClick={() => onRefine(r)}>
+            {r}
+          </button>
+        ))}
+      </div>
+    </form>
+  );
+}
+
+/** The summary card: regenerate, loading state, where the ideas came from, and free-text refinement. */
+function IdeasIntro(props: Props) {
+  const { details, ideas, loading, busySection, notice } = props;
+  const generatingAll = loading && !busySection;
+  return (
+    <div className="card ideas-intro">
+      <div className="panel-head">
+        <h3 id="ideas-heading">Personalised ideas</h3>
+        <button type="button" className="btn small" onClick={props.onRegenerate} disabled={loading}>
+          <RefreshCw size={16} aria-hidden="true" /> {generatingAll ? 'Generating…' : 'Generate new ideas'}
+        </button>
+      </div>
+      <div aria-live="polite">
+        {generatingAll && <p className="muted">Gemini is crafting ideas for your event…</p>}
+        {!loading && notice && <p className="notice">{notice}</p>}
+      </div>
+      {ideas && (
+        <>
+          <p className="lead">{ideas.summary}</p>
+          <p className="source-tag">
+            {ideas.source === 'gemini' ? (
+              <>
+                <Sparkles size={14} aria-hidden="true" /> Generated with Google Gemini, within checked{' '}
+                {details.eventType === 'wedding' ? 'traditions' : 'menus'} — suggestions, not bookings
+              </>
+            ) : (
+              'Curated ideas from our tradition guide'
+            )}
+          </p>
+        </>
+      )}
+      <RefineForm loading={loading} onRefine={props.onRefine} />
+    </div>
+  );
+}
+
+/** Three suggested looks for non-wedding events; picking one recolours the plan. */
+function LooksGrid({
+  details,
+  looks,
+  loading,
+  onUse,
+}: {
+  details: EventDetails;
+  looks: DecorLook[];
+  loading: boolean;
+  onUse: Props['onUseInspiration'];
+}) {
+  return (
+    <>
+      <p className="hint">
+        {details.colors || details.preferences
+          ? 'Three different looks, built from what you told us. Pick one and the plan follows it.'
+          : 'Three different looks that are popular right now. Pick one, or tell us your style above.'}
+      </p>
+      <ul className="ceremony-grid looks-grid">
+        {looks.map((l) => (
+          <LookCard
+            key={l.name}
+            look={l}
+            chosen={details.colors === lookColours(l)}
+            disabled={loading}
+            onUse={() =>
+              onUse({
+                colors: lookColours(l),
+                note: `Chosen décor look: ${l.name}`,
+                message: `Décor look set to “${l.name}”.`,
+              })
+            }
+          />
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function DecorSection(props: Props & { ideas: Ideas; busy: boolean }) {
+  const { details, ideas, loading, busySection } = props;
+  const looks = details.eventType === 'wedding' ? [] : (ideas.looks ?? []);
+  const tier = decorTier(details, props.decor);
+  return (
+    <section className="ideas-section" aria-labelledby="decor-heading" aria-busy={props.busy}>
+      <div className="panel-head">
+        <h3 id="decor-heading">{details.eventType === 'wedding' ? 'Ceremonies & décor' : 'Décor'}</h3>
+        {props.busy && busySection === 'decor' && <span className="pill">Updating décor…</span>}
+        <DecorSwitch on={details.wantsDecor} onToggle={props.onToggleDecor} disabled={loading} />
+      </div>
+      {!details.wantsDecor && (
+        <p className="notice">
+          Décor is off — no money is set aside for it and decorators are off your checklist. These ideas stay
+          here in case you want a few touches.
+        </p>
+      )}
+      <SectionRefine
+        section="decor"
+        label="Change the décor"
+        placeholder={DECOR_EXAMPLES[details.eventType]}
+        busy={loading}
+        onRefresh={props.onRefreshSection}
+      />
+      {looks.length > 0 ? (
+        <LooksGrid details={details} looks={looks} loading={loading} onUse={props.onUseInspiration} />
+      ) : (
+        <ul className="ceremony-grid">
+          {ceremoniesFor(details).map((c) => (
+            <CeremonyCard
+              key={c.id}
+              ceremony={c}
+              idea={ideas.ceremonies.find((i) => i.ceremonyId === c.id)}
+              tier={tier}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** At a café or restaurant the venue's own menu is used; elsewhere, the tradition's menu. */
+function MenuSection(props: Props & { ideas: Ideas; busy: boolean }) {
+  const { details, ideas } = props;
+  return (
+    <section className="ideas-section" aria-labelledby="menu-heading" aria-busy={props.busy}>
+      <div className="panel-head">
+        <h3 id="menu-heading">The menu</h3>
+        {props.busySection === 'menu' && <span className="pill">Updating menu…</span>}
+      </div>
+      {isRestaurantVenue(details.venueType) ? (
+        <RestaurantMenuCard details={details} catering={props.catering} />
+      ) : (
+        <>
+          <SectionRefine
+            section="menu"
+            label="Change the menu"
+            placeholder={MENU_EXAMPLES[details.eventType]}
+            busy={props.loading}
+            onRefresh={props.onRefreshSection}
+          />
+          <MenuCard details={details} ideas={ideas} catering={props.catering} />
+        </>
+      )}
+    </section>
+  );
+}
+
+function TickCard({
+  title,
+  icon,
+  tone,
+  items,
+}: {
+  title: string;
+  icon: ReactNode;
+  tone?: string;
+  items: string[];
+}) {
+  return (
+    <div className="card">
+      <h4 className="card-title">
+        <span className={tone ? `icon-badge ${tone}` : 'icon-badge'} aria-hidden="true">
+          {icon}
+        </span>
+        {title}
+      </h4>
+      <ul className="ticks">
+        {items.map((item) => (
+          <li key={item}>
+            <Sparkles size={14} aria-hidden="true" /> {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ExtrasSection(props: Props & { ideas: Ideas; busy: boolean }) {
+  const { ideas } = props;
+  return (
+    <section className="ideas-section" aria-labelledby="extras-heading" aria-busy={props.busy}>
+      <div className="panel-head">
+        <h3 id="extras-heading">Make it memorable</h3>
+        <button
+          type="button"
+          className="btn small"
+          disabled={props.loading}
+          onClick={() => props.onRefreshSection('extras')}
+        >
+          <RefreshCw size={16} aria-hidden="true" />{' '}
+          {props.busySection === 'extras' ? 'Updating…' : 'New ideas'}
+        </button>
+      </div>
+      <div className="extras-grid">
+        <TickCard title="Activities" icon={<PartyPopper size={20} />} items={ideas.activities} />
+        <TickCard title="Ways to save" icon={<PiggyBank size={20} />} tone="teal" items={ideas.budgetTips} />
+      </div>
+    </section>
+  );
+}
+
+/** Ceremonies with real photos, a course-by-course menu and extras — each part editable on its own. */
+export function IdeasPanel(props: Props) {
+  const { ideas, loading, busySection } = props;
+  // A whole-plan request (no section) makes every section busy.
+  const busy = (s: IdeasSection) => loading && (busySection === s || busySection === null);
 
   return (
     <section aria-labelledby="ideas-heading" className="ideas" aria-busy={loading}>
-      <div className="card ideas-intro">
-        <div className="panel-head">
-          <h3 id="ideas-heading">Personalised ideas</h3>
-          <button type="button" className="btn small" onClick={props.onRegenerate} disabled={loading}>
-            <RefreshCw size={16} aria-hidden="true" />{' '}
-            {loading && !busySection ? 'Generating…' : 'Generate new ideas'}
-          </button>
-        </div>
-        <div aria-live="polite">
-          {loading && !busySection && <p className="muted">Gemini is crafting ideas for your event…</p>}
-          {!loading && notice && <p className="notice">{notice}</p>}
-        </div>
-        {ideas && (
-          <>
-            <p className="lead">{ideas.summary}</p>
-            <p className="source-tag">
-              {ideas.source === 'gemini' ? (
-                <>
-                  <Sparkles size={14} aria-hidden="true" /> Generated with Google Gemini, within checked{' '}
-                  {details.eventType === 'wedding' ? 'traditions' : 'menus'} — suggestions, not bookings
-                </>
-              ) : (
-                'Curated ideas from our tradition guide'
-              )}
-            </p>
-          </>
-        )}
-        <form className="refine" onSubmit={submit} aria-label="Refine ideas">
-          <label htmlFor="refine-input">Not quite right? Tell the AI what to change</label>
-          <div className="ask-row">
-            <input
-              id="refine-input"
-              value={request}
-              maxLength={LIMITS.refinementMax}
-              placeholder="e.g. our venue is a small terrace, and grandparents need seating"
-              onChange={(e) => setRequest(e.target.value)}
-            />
-            <button type="submit" className="btn primary" disabled={loading || request.trim().length < 3}>
-              Refine
-            </button>
-          </div>
-          <div className="chips" role="group" aria-label="Quick refinements">
-            {['More eco-friendly', 'Cheaper options', 'More traditional', 'Better for elders and kids'].map(
-              (r) => (
-                <button
-                  key={r}
-                  type="button"
-                  className="chip"
-                  disabled={loading}
-                  onClick={() => props.onRefine(r)}
-                >
-                  {r}
-                </button>
-              ),
-            )}
-          </div>
-        </form>
-      </div>
-
+      <IdeasIntro {...props} />
       <InspirationCard onUse={props.onUseInspiration} />
-
       {ideas && (
         <>
-          <section className="ideas-section" aria-labelledby="decor-heading" aria-busy={busy('decor')}>
-            <div className="panel-head">
-              <h3 id="decor-heading">{details.eventType === 'wedding' ? 'Ceremonies & décor' : 'Décor'}</h3>
-              {busy('decor') && busySection === 'decor' && <span className="pill">Updating décor…</span>}
-              <DecorSwitch on={details.wantsDecor} onToggle={props.onToggleDecor} disabled={loading} />
-            </div>
-            {!details.wantsDecor && (
-              <p className="notice">
-                Décor is off — no money is set aside for it and decorators are off your checklist. These ideas
-                stay here in case you want a few touches.
-              </p>
-            )}
-            <SectionRefine
-              section="decor"
-              label="Change the décor"
-              placeholder={DECOR_EXAMPLES[details.eventType]}
-              busy={loading}
-              onRefresh={props.onRefreshSection}
-            />
-            {looks.length > 0 ? (
-              <>
-                <p className="hint">
-                  {details.colors || details.preferences
-                    ? 'Three different looks, built from what you told us. Pick one and the plan follows it.'
-                    : 'Three different looks that are popular right now. Pick one, or tell us your style above.'}
-                </p>
-                <ul className="ceremony-grid looks-grid">
-                  {looks.map((l) => (
-                    <LookCard
-                      key={l.name}
-                      look={l}
-                      chosen={details.colors === lookColours(l)}
-                      disabled={loading}
-                      onUse={() =>
-                        props.onUseInspiration({
-                          colors: lookColours(l),
-                          note: `Chosen décor look: ${l.name}`,
-                          message: `Décor look set to “${l.name}”.`,
-                        })
-                      }
-                    />
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <ul className="ceremony-grid">
-                {ceremonies.map((c) => (
-                  <CeremonyCard
-                    key={c.id}
-                    ceremony={c}
-                    idea={ideas.ceremonies.find((i) => i.ceremonyId === c.id)}
-                    tier={tier}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="ideas-section" aria-labelledby="menu-heading" aria-busy={busy('menu')}>
-            <div className="panel-head">
-              <h3 id="menu-heading">The menu</h3>
-              {busySection === 'menu' && <span className="pill">Updating menu…</span>}
-            </div>
-            {isRestaurantVenue(details.venueType) ? (
-              <RestaurantMenuCard details={details} catering={props.catering} />
-            ) : (
-              <>
-                <SectionRefine
-                  section="menu"
-                  label="Change the menu"
-                  placeholder={MENU_EXAMPLES[details.eventType]}
-                  busy={loading}
-                  onRefresh={props.onRefreshSection}
-                />
-                <MenuCard details={details} ideas={ideas} catering={props.catering} />
-              </>
-            )}
-          </section>
-
-          <section className="ideas-section" aria-labelledby="extras-heading" aria-busy={busy('extras')}>
-            <div className="panel-head">
-              <h3 id="extras-heading">Make it memorable</h3>
-              <button
-                type="button"
-                className="btn small"
-                disabled={loading}
-                onClick={() => props.onRefreshSection('extras')}
-              >
-                <RefreshCw size={16} aria-hidden="true" />{' '}
-                {busySection === 'extras' ? 'Updating…' : 'New ideas'}
-              </button>
-            </div>
-            <div className="extras-grid">
-              <div className="card">
-                <h4 className="card-title">
-                  <span className="icon-badge" aria-hidden="true">
-                    <PartyPopper size={20} />
-                  </span>
-                  Activities
-                </h4>
-                <ul className="ticks">
-                  {ideas.activities.map((a) => (
-                    <li key={a}>
-                      <Sparkles size={14} aria-hidden="true" /> {a}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="card">
-                <h4 className="card-title">
-                  <span className="icon-badge teal" aria-hidden="true">
-                    <PiggyBank size={20} />
-                  </span>
-                  Ways to save
-                </h4>
-                <ul className="ticks">
-                  {ideas.budgetTips.map((t) => (
-                    <li key={t}>
-                      <Sparkles size={14} aria-hidden="true" /> {t}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </section>
+          <DecorSection {...props} ideas={ideas} busy={busy('decor')} />
+          <MenuSection {...props} ideas={ideas} busy={busy('menu')} />
+          <ExtrasSection {...props} ideas={ideas} busy={busy('extras')} />
         </>
       )}
     </section>
