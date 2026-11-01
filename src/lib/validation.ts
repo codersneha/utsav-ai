@@ -80,71 +80,87 @@ function validCeremonies(raw: Record<string, unknown>, eventType: EventType): st
   return [...new Set(raw.ceremonies.filter((c): c is string => typeof c === 'string' && known.has(c)))];
 }
 
-/**
- * Validates untrusted event input. The same function guards the form in the
- * browser and the API on the server, so both enforce identical rules.
- */
 /** A venue name, or a pasted Google Maps link (kept whole so it can be read). */
 function venueNameOf(value: unknown): string {
   const text = cleanText(value, LIMITS.venueLinkMax);
   return /^https?:\/\//i.test(text) ? text : text.slice(0, LIMITS.venueMax).trim();
 }
 
-export function validateEventDetails(input: unknown, today: string): ValidationResult<EventDetails> {
-  const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+/** Why a date can't be planned for, or undefined when it can. */
+function dateError(date: string, today: string): string | undefined {
+  if (Number.isNaN(parseIsoDate(date))) return 'Enter a valid date.';
+  const ahead = daysBetween(today, date);
+  if (ahead < 0) return 'The event date must be today or later.';
+  if (ahead > LIMITS.maxDaysAhead) return 'Pick a date within the next two years.';
+  return undefined;
+}
+
+const inRange = (n: number, min: number, max: number) => !Number.isNaN(n) && n >= min && n <= max;
+const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+
+/** The fields every plan needs, checked together so the form can show every problem at once. */
+function requiredFields(raw: Record<string, unknown>, today: string) {
+  const values = {
+    eventType: raw.eventType,
+    date: typeof raw.date === 'string' ? raw.date : '',
+    city: cleanText(raw.city, LIMITS.cityMax),
+    guests: toInt(raw.guests),
+    budget: toInt(raw.budget),
+  };
   const errors: FieldErrors = {};
-
-  const eventType = raw.eventType;
-  if (!isEventType(eventType)) errors.eventType = 'Choose an event type.';
-
-  const title = cleanText(raw.title, LIMITS.titleMax);
-
-  const date = typeof raw.date === 'string' ? raw.date : '';
-  if (Number.isNaN(parseIsoDate(date))) {
-    errors.date = 'Enter a valid date.';
-  } else {
-    const ahead = daysBetween(today, date);
-    if (ahead < 0) errors.date = 'The event date must be today or later.';
-    else if (ahead > LIMITS.maxDaysAhead) errors.date = 'Pick a date within the next two years.';
-  }
-
-  const city = cleanText(raw.city, LIMITS.cityMax);
-  if (city.length < 2) errors.city = 'Enter the city or town.';
-
-  const guests = toInt(raw.guests);
-  if (Number.isNaN(guests) || guests < LIMITS.guestsMin || guests > LIMITS.guestsMax) {
+  if (!isEventType(values.eventType)) errors.eventType = 'Choose an event type.';
+  const date = dateError(values.date, today);
+  if (date) errors.date = date;
+  if (values.city.length < 2) errors.city = 'Enter the city or town.';
+  if (!inRange(values.guests, LIMITS.guestsMin, LIMITS.guestsMax)) {
     errors.guests = `Guests must be between ${LIMITS.guestsMin} and ${LIMITS.guestsMax}.`;
   }
-
-  const budget = toInt(raw.budget);
-  if (Number.isNaN(budget) || budget < LIMITS.budgetMin || budget > LIMITS.budgetMax) {
-    errors.budget = `Budget must be between ₹${LIMITS.budgetMin.toLocaleString('en-IN')} and ₹${LIMITS.budgetMax.toLocaleString('en-IN')}.`;
+  if (!inRange(values.budget, LIMITS.budgetMin, LIMITS.budgetMax)) {
+    errors.budget = `Budget must be between ${rupees(LIMITS.budgetMin)} and ${rupees(LIMITS.budgetMax)}.`;
   }
+  return { values, errors };
+}
 
+/** Optional fields fall back to neutral defaults, so older saved plans still load. */
+function optionalFields(raw: Record<string, unknown>, eventType: EventType) {
+  return {
+    title: cleanText(raw.title, LIMITS.titleMax),
+    preferences: cleanText(raw.preferences, LIMITS.preferencesMax),
+    priorities: pickAllowed(raw.priorities, isPriority, 2),
+    venueType: isVenueType(raw.venueType) ? raw.venueType : 'undecided',
+    diets: pickAllowed(raw.diets, isDiet, DIETS.length),
+    ageGroup: isAgeGroup(raw.ageGroup) ? raw.ageGroup : 'mixed',
+    colors: cleanText(raw.colors, LIMITS.colorsMax),
+    language: isLanguage(raw.language) ? raw.language : 'en',
+    tradition: isTradition(raw.tradition) ? raw.tradition : 'modern',
+    ceremonies: validCeremonies(raw, eventType),
+    venueName: venueNameOf(raw.venueName),
+    venuePreference: cleanText(raw.venuePreference, LIMITS.venueMax),
+    wantsDecor: raw.wantsDecor !== false,
+  } satisfies Omit<EventDetails, 'eventType' | 'date' | 'city' | 'guests' | 'budget'>;
+}
+
+/**
+ * Validates untrusted event input. The same function guards the form in the
+ * browser and the API on the server, so both enforce identical rules.
+ */
+export function validateEventDetails(input: unknown, today: string): ValidationResult<EventDetails> {
+  const raw = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+  const { values, errors } = requiredFields(raw, today);
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
+  const eventType = values.eventType as EventType;
+  const { title, ...rest } = optionalFields(raw, eventType);
   return {
     ok: true,
     value: {
-      eventType: eventType as EventType,
+      eventType,
       title,
-      date,
-      city,
-      guests,
-      budget,
-      preferences: cleanText(raw.preferences, LIMITS.preferencesMax),
-      priorities: pickAllowed(raw.priorities, isPriority, 2),
-      // Optional fields fall back to neutral defaults, so older saved plans still load.
-      venueType: isVenueType(raw.venueType) ? raw.venueType : 'undecided',
-      diets: pickAllowed(raw.diets, isDiet, DIETS.length),
-      ageGroup: isAgeGroup(raw.ageGroup) ? raw.ageGroup : 'mixed',
-      colors: cleanText(raw.colors, LIMITS.colorsMax),
-      language: isLanguage(raw.language) ? raw.language : 'en',
-      tradition: isTradition(raw.tradition) ? raw.tradition : 'modern',
-      ceremonies: validCeremonies(raw, eventType as EventType),
-      venueName: venueNameOf(raw.venueName),
-      venuePreference: cleanText(raw.venuePreference, LIMITS.venueMax),
-      wantsDecor: raw.wantsDecor !== false,
+      date: values.date,
+      city: values.city,
+      guests: values.guests,
+      budget: values.budget,
+      ...rest,
     },
   };
 }
