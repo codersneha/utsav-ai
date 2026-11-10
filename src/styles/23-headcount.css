@@ -1,0 +1,120 @@
+/* Free headcount check (its own page) */
+.headcount {
+  display: grid;
+  gap: 1.25rem;
+  padding-block: 2rem 3rem;
+}
+
+.headcount-intro h1 {
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 5vw, 3rem);
+  line-height: 1.1;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.headcount-intro .lead {
+  max-width: 46rem;
+}
+
+.headcount-basics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem 1.5rem;
+  align-items: start;
+}
+
+.headcount-add {
+  display: grid;
+  grid-template-columns: 2fr 6rem 1.5fr 1.5fr auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin: 0.75rem 0 1rem;
+}
+
+.headcount-add .field {
+  margin: 0;
+}
+
+.headcount-add .field-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  min-height: 1.25rem;
+}
+
+.headcount-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 15rem;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.headcount-who {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.headcount-count {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.headcount-reply {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.headcount-reply select {
+  flex: 1;
+  min-height: 44px;
+  min-width: 0;
+}
+
+.headcount-answer {
+  font-size: 1.15rem;
+  margin: 0.25rem 0 0;
+}
+
+.headcount-answer strong {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+}
+
+.headcount-bar .standby {
+  background: var(--accent);
+}
+
+.headcount-bar .unlikely {
+  background: var(--surface-2);
+}
+
+.headcount-calls ul,
+.headcount-rules {
+  margin: 0.25rem 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.headcount-result .actions {
+  margin: 0.75rem 0;
+}
+
+@media (max-width: 760px) {
+  .headcount-add {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .headcount-add .field:first-child,
+  .headcount-add .btn {
+    grid-column: 1 / -1;
+  }
+
+  .headcount-list li {
+    grid-template-columns: 1fr;
+  }
+
+  .headcount-count {
+    white-space: normal;
+  }
+}

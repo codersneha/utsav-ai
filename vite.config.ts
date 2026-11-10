@@ -42,6 +42,8 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       // Fonts stay separate files: the CSP allows fonts only from this site, not data: URLs.
       assetsInlineLimit: (file: string) => (/\.woff2?$/.test(file) ? false : undefined),
+      // Two pages: the planner, and the free headcount check at /headcount.
+      rollupOptions: { input: { main: 'index.html', headcount: 'headcount.html' } },
     },
     test: {
       environment: 'jsdom',
@@ -51,7 +53,7 @@ export default defineConfig(({ mode }) => {
       coverage: {
         provider: 'v8',
         include: ['src/**/*.{ts,tsx}', 'api/**/*.ts'],
-        exclude: ['src/test/**', 'src/main.tsx', 'src/**/*.test.{ts,tsx}'],
+        exclude: ['src/test/**', 'src/main.tsx', 'src/headcount/main.tsx', 'src/**/*.test.{ts,tsx}'],
         reporter: ['text', 'html', 'json-summary'],
       },
     },

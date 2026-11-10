@@ -60,6 +60,10 @@ Covers the one-line brief and the detailed expectations from the Challenge 5 exp
 | Change test: "50 more guests, smaller budget, 2 weeks earlier"              | **Change details** revises in place and shows a **"what changed" report** (per-guest food, budget delta, tasks now due sooner or overdue) while keeping budget edits, completed tasks, vendors and spending                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Conversational assistant                                                    | **Ask AI** remembers recent turns and sees the event and budget estimates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
+## Free headcount check (`/headcount`)
+
+A separate, no-login page for any catered function: list the families you invited and what they said on the phone, and get the likely turnout, the number to guarantee to the caterer and the money at stake. It predicts by household, because in India one invitation covers a family and few people send a formal reply. The chances it uses are rules of thumb, shown on the page, not measured data. Logic: `src/lib/headcount.ts`; page: `src/components/headcount/`.
+
 ## How it works
 
 ```
@@ -112,7 +116,7 @@ A calm, festive identity instead of a form-and-table utility: ivory paper, rani 
 
 ### ✅ Testing
 
-- **277 tests across 32 files** (Vitest + Testing Library), with about **96% line and 86% branch coverage** (`npm run coverage`).
+- **295 tests across 34 files** (Vitest + Testing Library), with about **96% line and 86% branch coverage** (`npm run coverage`).
 - Unit tests: budget maths (exact sums, priority boosts, user overrides, guest impact, trade-offs that really fix the plan), timeline (compression, priorities, dependencies, slippage alerts, custom tasks), checklist & quote summaries, the change report (including the explainer's "50 more guests, smaller budget, two weeks earlier" case), validation, prompts, AI-output parsing, storage guards, calendar export, rate limiter and cache.
 - Culture tests pin the facts: the Bengali wedding is served in the right course order and never as a buffet, vegetarian-only menus have no fish or meat, a reception-only plan has no haldi, invented dishes are dropped, and Jain guests always get a safe choice.
 - Budget and planning tests: menus get richer with the food budget and never drop must-have dishes, AI menus that overspend are trimmed, dishes stay in serving order, the guest ledger counts and weights replies (and its CSV export neutralises spreadsheet formulas), what-if costs match the plan, and amounts like “20 lakh” or “1.5 crore” are read correctly.
